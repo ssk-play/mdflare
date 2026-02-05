@@ -123,6 +123,10 @@ body {
   flex-shrink: 0;
 }
 
+.sidebar-handle {
+  display: none;
+}
+
 .file-tree {
   flex: 1;
   overflow-y: auto;
@@ -748,6 +752,27 @@ body {
   .sidebar.open {
     max-height: 50vh;
     overflow-y: auto;
+  }
+
+  .sidebar-handle {
+    display: flex;
+    justify-content: center;
+    padding: 8px 0;
+    cursor: pointer;
+    flex-shrink: 0;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .sidebar-handle-bar {
+    width: 40px;
+    height: 4px;
+    background: #30363d;
+    border-radius: 2px;
+    transition: background 0.2s;
+  }
+
+  .sidebar-handle:active .sidebar-handle-bar {
+    background: #58a6ff;
   }
 
   .sidebar-header {
