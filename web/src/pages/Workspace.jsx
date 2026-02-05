@@ -440,7 +440,19 @@ export default function Workspace({ user }) {
             <span>v{__BUILD_VERSION__} · {__BUILD_TIME__}</span>
             <button className="sample-btn" onClick={handleGenerateSamples} disabled={sidebarLoading}>🎲 샘플</button>
           </div>
-          <div className="sidebar-handle" onClick={() => setSidebarOpen(false)}>
+          <div className="sidebar-handle"
+            onClick={() => setSidebarOpen(false)}
+            onTouchStart={(e) => {
+              const t = e.touches[0];
+              e.currentTarget._swipe = { startY: t.clientY };
+            }}
+            onTouchEnd={(e) => {
+              const sw = e.currentTarget._swipe;
+              if (!sw) return;
+              const dy = e.changedTouches[0].clientY - sw.startY;
+              if (dy < -30) setSidebarOpen(false);
+              e.currentTarget._swipe = null;
+            }}>
             <div className="sidebar-handle-bar" />
           </div>
         </aside>
