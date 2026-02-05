@@ -778,6 +778,11 @@ body {
     overflow-y: auto;
   }
 
+  .sidebar.dragging {
+    transition: none !important;
+    overflow: hidden;
+  }
+
   .sidebar-handle {
     display: flex;
     justify-content: center;
