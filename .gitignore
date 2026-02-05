@@ -6,3 +6,4 @@ test-vault
 agent/build/
 agent/MDFlareAgent/MDFlareAgent
 agent/MDFlareAgent/MDFlareAgent.xcodeproj/
+local-data/
