@@ -5,7 +5,7 @@ export default defineConfig({
   define: {
     __BUILD_TIME__: JSON.stringify(new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })),
     __BUILD_VERSION__: JSON.stringify(process.env.npm_package_version || '0.1.0'),
-    __LAST_CHANGE__: JSON.stringify('사이드바 파일 검색 기능 추가'),
+    __LAST_CHANGE__: JSON.stringify('키보드 단축키(Ctrl+S/B/Esc) + 글자/단어/줄 수 표시'),
   },
   plugins: [react()],
   server: {

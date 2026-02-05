@@ -450,6 +450,32 @@ export default function Workspace({ user }) {
     }
   };
 
+  // 키보드 단축키
+  useEffect(() => {
+    const handler = (e) => {
+      // Ctrl/Cmd + S: 즉시 저장
+      if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+        e.preventDefault();
+        if (currentFile && content !== savedContent) {
+          if (saveTimer.current) clearTimeout(saveTimer.current);
+          doSave(currentFile.path, content);
+        }
+      }
+      // Ctrl/Cmd + B: 사이드바 토글
+      if ((e.ctrlKey || e.metaKey) && e.key === 'b') {
+        e.preventDefault();
+        setSidebarOpen(prev => !prev);
+      }
+      // Escape: 검색 초기화 또는 컨텍스트 메뉴 닫기
+      if (e.key === 'Escape') {
+        setSearchQuery('');
+        setContextMenu(null);
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [currentFile, content, savedContent, doSave]);
+
   const statusText = { idle: '', editing: '✏️', saving: '저장 중...', saved: '✓ 저장됨', error: '⚠️ 저장 실패' };
   const statusClass = { idle: '', editing: 'unsaved', saving: 'saving', saved: 'saved', error: 'error' };
 
@@ -537,6 +563,11 @@ export default function Workspace({ user }) {
                   }} title="전체 내용 복사">📋</button>
                   <span className={`save-status ${statusClass[saveStatus]}`}>{statusText[saveStatus]}</span>
                 </div>
+              </div>
+              <div className="editor-stats">
+                <span>{content.length}자</span>
+                <span>{content.trim() ? content.trim().split(/\s+/).length : 0}단어</span>
+                <span>{content.split('\n').length}줄</span>
               </div>
               <div className="editor-content">
                 {(view === 'edit' || view === 'split') && (
