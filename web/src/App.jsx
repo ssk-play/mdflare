@@ -4,6 +4,7 @@ import { markdown } from '@codemirror/lang-markdown';
 import { EditorView } from '@codemirror/view';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { updateFileMeta, onFilesChanged, simpleHash } from './firebase';
 
 const USER_ID = 'test';
 const API = '/api';
@@ -40,6 +41,32 @@ export default function App() {
   }, []);
 
   useEffect(() => { loadFiles(); }, [loadFiles]);
+
+  // Firebase Realtime DB 변경 감지
+  useEffect(() => {
+    const unsubscribe = onFilesChanged(USER_ID, (changedFiles) => {
+      // 현재 열린 파일이 외부에서 변경됐는지 체크
+      if (currentFile) {
+        const changed = changedFiles.find(f => f.path === currentFile.path);
+        if (changed && changed.hash !== simpleHash(content)) {
+          // 외부에서 변경됨 → 최신 버전 가져오기
+          console.log('🔄 External change detected:', currentFile.path);
+          fetch(`${API}/${USER_ID}/file/${currentFile.path}`)
+            .then(r => r.json())
+            .then(data => {
+              setContent(data.content);
+              setSavedContent(data.content);
+              setSaveStatus('idle');
+            })
+            .catch(err => console.error('Failed to reload:', err));
+        }
+      }
+      // 파일 트리도 리프레시
+      loadFiles();
+    });
+
+    return () => unsubscribe && unsubscribe();
+  }, [currentFile, content, loadFiles]);
 
   // 컨텍스트 메뉴 닫기
   useEffect(() => {
@@ -79,6 +106,11 @@ export default function App() {
       if (data.saved) {
         setSavedContent(newContent);
         setSaveStatus('saved');
+        // Realtime DB에 메타데이터 업데이트
+        updateFileMeta(USER_ID, filePath, {
+          size: new Blob([newContent]).size,
+          hash: simpleHash(newContent)
+        }).catch(err => console.error('Firebase meta update failed:', err));
         setTimeout(() => setSaveStatus(s => s === 'saved' ? 'idle' : s), 2000);
       }
     } catch (err) {
