@@ -692,7 +692,7 @@ function FolderItem({ item, currentPath, onSelect, onContextMenu, focusedFolder,
           onDragOver(item.path);
         }}
         onDragLeave={() => onDragOver(null)}
-        onDrop={(e) => { e.preventDefault(); const src = e.dataTransfer.getData('text/plain'); onDragOver(null); if (src && onDragMove) onDragMove(src, item.path); }}
+        onDrop={(e) => { e.preventDefault(); e.stopPropagation(); const src = e.dataTransfer.getData('text/plain'); onDragOver(null); if (src && !isSameFolder && onDragMove) onDragMove(src, item.path); }}
         {...longPressHandlers}>
         <span className="icon">{open ? '📂' : '📁'}</span>
         <span className="tree-item-name">{item.name}</span>
