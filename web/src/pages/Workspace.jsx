@@ -197,12 +197,25 @@ export default function Workspace({ user }) {
     return () => { if (saveTimer.current) clearTimeout(saveTimer.current); };
   }, []);
 
+  // 파일 트리에서 경로 존재 여부 확인
+  const pathExists = useCallback((targetPath, items) => {
+    for (const item of items) {
+      if (item.path === targetPath) return true;
+      if (item.children && pathExists(targetPath, item.children)) return true;
+    }
+    return false;
+  }, []);
+
   // 컨텍스트 메뉴 액션
   const handleNewFile = async (folderPath) => {
     const name = prompt('새 파일 이름 (.md 자동 추가)');
     if (!name) return;
     const fileName = name.endsWith('.md') ? name : `${name}.md`;
     const fp = folderPath ? `${folderPath}/${fileName}` : fileName;
+    if (pathExists(fp, files)) {
+      addToast(`📄 "${fileName}" — 같은 이름의 파일이 이미 존재합니다`, 'error', 3000);
+      return;
+    }
     const tid = addToast(`📄 "${fileName}" 생성 중...`, 'loading');
     setSidebarLoading(true);
     try {
@@ -225,7 +238,12 @@ export default function Workspace({ user }) {
   const handleNewFolder = async (parentPath) => {
     const name = prompt('새 폴더 이름');
     if (!name) return;
-    const fp = parentPath ? `${parentPath}/${name}/.gitkeep` : `${name}/.gitkeep`;
+    const folderFullPath = parentPath ? `${parentPath}/${name}` : name;
+    if (pathExists(folderFullPath, files)) {
+      addToast(`📁 "${name}" — 같은 이름의 폴더가 이미 존재합니다`, 'error', 3000);
+      return;
+    }
+    const fp = `${folderFullPath}/.gitkeep`;
     const tid = addToast(`📁 "${name}" 폴더 생성 중...`, 'loading');
     setSidebarLoading(true);
     try {
