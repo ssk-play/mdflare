@@ -66,6 +66,9 @@ export default function Workspace({ user }) {
   const [dragOver, setDragOver] = useState(null);
   const [dragSrc, setDragSrc] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [recentFiles, setRecentFiles] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('mdflare-recent') || '[]'); } catch { return []; }
+  });
   const saveTimer = useRef(null);
   const toastId = useRef(0);
 
@@ -166,9 +169,14 @@ export default function Workspace({ user }) {
     return () => unsubscribe && unsubscribe();
   }, [currentFile, content, loadFiles, userId]);
 
-  // 파일 열기 (URL 변경)
+  // 파일 열기 (URL 변경 + 최근 파일 기록)
   const openFile = useCallback((fp) => {
     navigate(`/${userId}/${fp}`);
+    setRecentFiles(prev => {
+      const updated = [fp, ...prev.filter(f => f !== fp)].slice(0, 10);
+      localStorage.setItem('mdflare-recent', JSON.stringify(updated));
+      return updated;
+    });
   }, [userId, navigate]);
 
   // 자동 저장
@@ -631,6 +639,16 @@ export default function Workspace({ user }) {
             <div className="empty-state">
               <div className="logo">🔥</div>
               <p>파일을 선택하세요</p>
+              {recentFiles.length > 0 && (
+                <div className="recent-files">
+                  <h4>최근 파일</h4>
+                  {recentFiles.map(fp => (
+                    <div key={fp} className="recent-item" onClick={() => openFile(fp)}>
+                      📄 {fp}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
         </div>
