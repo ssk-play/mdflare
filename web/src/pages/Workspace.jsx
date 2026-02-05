@@ -441,7 +441,7 @@ export default function Workspace({ user }) {
             <button className="sample-btn" onClick={handleGenerateSamples} disabled={sidebarLoading}>🎲 샘플</button>
           </div>
           <div className="sidebar-handle" onClick={() => setSidebarOpen(false)}>
-            <div className="sidebar-handle-bar" />
+            ▲
           </div>
         </aside>
 

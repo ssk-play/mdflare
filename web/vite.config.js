@@ -5,7 +5,7 @@ export default defineConfig({
   define: {
     __BUILD_TIME__: JSON.stringify(new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })),
     __BUILD_VERSION__: JSON.stringify(process.env.npm_package_version || '0.1.0'),
-    __LAST_CHANGE__: JSON.stringify('핸들바 클릭만 처리 (드래그/스와이프 제거)'),
+    __LAST_CHANGE__: JSON.stringify('사이드바 닫기 ▲ 화살표로 변경'),
   },
   plugins: [react()],
   server: {

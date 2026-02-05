@@ -781,23 +781,17 @@ body {
   .sidebar-handle {
     display: flex;
     justify-content: center;
-    padding: 8px 0;
+    padding: 6px 0;
     cursor: pointer;
     flex-shrink: 0;
     -webkit-tap-highlight-color: transparent;
+    color: #484f58;
+    font-size: 12px;
+    transition: color 0.2s;
   }
 
-  .sidebar-handle-bar {
-    width: 40px;
-    height: 4px;
-    background: #30363d;
-    border-radius: 2px;
-    transition: background 0.2s;
-  }
-
-  .sidebar-handle:active .sidebar-handle-bar {
-    background: #58a6ff;
-    transform: scaleX(1.2);
+  .sidebar-handle:active {
+    color: #58a6ff;
   }
 
   .sidebar-header {
