@@ -78,6 +78,32 @@ app.put('/api/:userId/file/*', (req, res) => {
   });
 });
 
+// 파일/폴더 이름 변경
+app.post('/api/:userId/rename', (req, res) => {
+  const vaultPath = VAULTS[req.params.userId];
+  if (!vaultPath) return res.status(404).json({ error: 'User not found' });
+
+  const { oldPath, newPath } = req.body;
+  const oldFull = path.join(vaultPath, oldPath);
+  const newFull = path.join(vaultPath, newPath);
+
+  if (!oldFull.startsWith(vaultPath) || !newFull.startsWith(vaultPath)) {
+    return res.status(403).json({ error: 'Access denied' });
+  }
+
+  if (!fs.existsSync(oldFull)) {
+    return res.status(404).json({ error: 'Not found' });
+  }
+
+  const newDir = path.dirname(newFull);
+  if (!fs.existsSync(newDir)) {
+    fs.mkdirSync(newDir, { recursive: true });
+  }
+
+  fs.renameSync(oldFull, newFull);
+  res.json({ renamed: true, oldPath, newPath });
+});
+
 // 파일 삭제
 app.delete('/api/:userId/file/*', (req, res) => {
   const vaultPath = VAULTS[req.params.userId];
