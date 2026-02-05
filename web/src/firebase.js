@@ -1,5 +1,6 @@
 import { initializeApp } from 'firebase/app';
 import { getDatabase, ref, set, onValue } from 'firebase/database';
+import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from 'firebase/auth';
 
 const firebaseConfig = {
   apiKey: "AIzaSyA1TtZCiI_lDs-qiYY5raUAQFNdMFcRn3g",
@@ -48,4 +49,20 @@ export function simpleHash(str) {
   return hash.toString(36);
 }
 
-export { db };
+// Auth
+const auth = getAuth(app);
+const googleProvider = new GoogleAuthProvider();
+
+export function loginWithGoogle() {
+  return signInWithPopup(auth, googleProvider);
+}
+
+export function logout() {
+  return signOut(auth);
+}
+
+export function onAuthChange(callback) {
+  return onAuthStateChanged(auth, callback);
+}
+
+export { db, auth };
