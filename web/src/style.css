@@ -778,11 +778,6 @@ body {
     overflow-y: auto;
   }
 
-  .sidebar.dragging {
-    transition: none !important;
-    overflow: hidden;
-  }
-
   .sidebar-handle {
     display: flex;
     justify-content: center;
@@ -802,6 +797,7 @@ body {
 
   .sidebar-handle:active .sidebar-handle-bar {
     background: #58a6ff;
+    transform: scaleX(1.2);
   }
 
   .sidebar-header {

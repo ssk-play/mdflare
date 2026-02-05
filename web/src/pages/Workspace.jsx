@@ -440,37 +440,7 @@ export default function Workspace({ user }) {
             <span title={__LAST_CHANGE__}>v{__BUILD_VERSION__} · {__LAST_CHANGE__}</span>
             <button className="sample-btn" onClick={handleGenerateSamples} disabled={sidebarLoading}>🎲 샘플</button>
           </div>
-          <div className="sidebar-handle"
-            onTouchStart={(e) => {
-              const sidebar = e.currentTarget.closest('.sidebar');
-              const startH = sidebar.offsetHeight;
-              sidebar._drag = { startY: e.touches[0].clientY, startH, raf: null };
-              sidebar.classList.add('dragging');
-            }}
-            onTouchMove={(e) => {
-              const sidebar = e.currentTarget.closest('.sidebar');
-              const d = sidebar._drag;
-              if (!d) return;
-              if (d.raf) cancelAnimationFrame(d.raf);
-              d.raf = requestAnimationFrame(() => {
-                const dy = e.touches[0].clientY - d.startY;
-                const newH = Math.max(48, d.startH + dy);
-                sidebar.style.height = newH + 'px';
-                sidebar.style.maxHeight = 'none';
-              });
-            }}
-            onTouchEnd={(e) => {
-              const sidebar = e.currentTarget.closest('.sidebar');
-              const d = sidebar._drag;
-              if (d?.raf) cancelAnimationFrame(d.raf);
-              sidebar.classList.remove('dragging');
-              sidebar.style.height = '';
-              sidebar.style.maxHeight = '';
-              if (!d) return;
-              const dy = e.changedTouches[0].clientY - d.startY;
-              if (dy < -40) setSidebarOpen(false);
-              sidebar._drag = null;
-            }}>
+          <div className="sidebar-handle" onClick={() => setSidebarOpen(false)}>
             <div className="sidebar-handle-bar" />
           </div>
         </aside>
