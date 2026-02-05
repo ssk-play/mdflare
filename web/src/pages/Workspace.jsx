@@ -297,7 +297,6 @@ export default function Workspace({ user }) {
       updateToast(tid, `📦 이동 실패`, 'error');
     } finally {
       setSidebarLoading(false);
-      setClipboard(null);
     }
   };
 
