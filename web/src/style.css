@@ -146,6 +146,18 @@ body {
   color: #f0883e;
 }
 
+.save-status.saving {
+  color: #8b949e;
+}
+
+.save-status.saved {
+  color: #3fb950;
+}
+
+.save-status.error {
+  color: #f85149;
+}
+
 .editor-content {
   flex: 1;
   display: flex;
@@ -234,23 +246,4 @@ body {
   font-size: 16px;
 }
 
-/* Save button */
-.save-btn {
-  padding: 4px 12px;
-  background: #238636;
-  border: 1px solid #2ea043;
-  border-radius: 6px;
-  color: #fff;
-  cursor: pointer;
-  font-size: 12px;
-  font-weight: 600;
-}
-
-.save-btn:hover {
-  background: #2ea043;
-}
-
-.save-btn:disabled {
-  opacity: 0.5;
-  cursor: default;
-}
+/* removed save button - auto save */
