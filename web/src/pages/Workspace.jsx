@@ -276,7 +276,11 @@ export default function Workspace({ user }) {
       <div className="main">
         <aside className={`sidebar ${sidebarOpen ? 'open' : ''}`}>
           <div className="sidebar-header" onContextMenu={(e) => showContextMenu(e, 'root', '', 'root')}>
-            📁 Files
+            <span>📁 Files</span>
+            <div className="sidebar-actions">
+              <button className="sidebar-action-btn" onClick={() => handleNewFile('')} title="새 파일">📄+</button>
+              <button className="sidebar-action-btn" onClick={() => handleNewFolder('')} title="새 폴더">📁+</button>
+            </div>
           </div>
           <div className="file-tree" onContextMenu={(e) => {
             if (e.target.closest('.tree-item')) return;
