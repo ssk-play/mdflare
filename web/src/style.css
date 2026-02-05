@@ -59,6 +59,9 @@ body {
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
 }
 
 .sidebar-header {
@@ -77,6 +80,22 @@ body {
 .sidebar-actions {
   display: flex;
   gap: 4px;
+}
+
+.focused-folder-label {
+  font-size: 11px;
+  color: #58a6ff;
+  cursor: pointer;
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 400;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.focused-folder-label:hover {
+  color: #f85149;
 }
 
 .sidebar-action-btn {
@@ -140,6 +159,12 @@ body {
 
 .tree-folder {
   padding-left: 0;
+}
+
+.tree-folder.focused {
+  background: #1f6feb22;
+  color: #58a6ff;
+  border-right: 2px solid #58a6ff;
 }
 
 .tree-folder-children {
@@ -763,4 +788,81 @@ body {
   .hero input {
     font-size: 16px !important; /* iOS 줌 방지 */
   }
+}
+
+/* ===== Toast 알림 ===== */
+.toast-container {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  z-index: 10000;
+  display: flex;
+  flex-direction: column-reverse;
+  gap: 8px;
+  pointer-events: none;
+}
+
+.toast {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  border-radius: 8px;
+  font-size: 13px;
+  color: #e6edf3;
+  backdrop-filter: blur(12px);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+  pointer-events: auto;
+  cursor: pointer;
+  animation: toast-in 0.3s ease-out;
+  max-width: 320px;
+}
+
+.toast-loading {
+  background: rgba(56, 139, 253, 0.2);
+  border: 1px solid rgba(56, 139, 253, 0.3);
+}
+
+.toast-success {
+  background: rgba(63, 185, 80, 0.2);
+  border: 1px solid rgba(63, 185, 80, 0.3);
+}
+
+.toast-error {
+  background: rgba(248, 81, 73, 0.2);
+  border: 1px solid rgba(248, 81, 73, 0.3);
+}
+
+.toast-icon {
+  font-size: 15px;
+  flex-shrink: 0;
+}
+
+.toast-msg {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(12px) scale(0.95); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* ===== 사이드바 로딩 스피너 ===== */
+.sidebar-spinner {
+  display: inline-block;
+  animation: spin 0.8s linear infinite;
+  font-size: 14px;
+  margin-left: 4px;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.sidebar-action-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }

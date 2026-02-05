@@ -32,6 +32,22 @@ const darkTheme = EditorView.theme({
   '.cm-activeLine': { backgroundColor: '#1f6feb11' },
 }, { dark: true });
 
+// 토스트 알림 컴포넌트
+function Toast({ toasts, onRemove }) {
+  return (
+    <div className="toast-container">
+      {toasts.map(t => (
+        <div key={t.id} className={`toast toast-${t.type}`} onClick={() => onRemove(t.id)}>
+          <span className="toast-icon">
+            {t.type === 'loading' ? '⏳' : t.type === 'success' ? '✅' : '❌'}
+          </span>
+          <span className="toast-msg">{t.message}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export default function Workspace({ user }) {
   const { userId, '*': filePath } = useParams();
   const navigate = useNavigate();
@@ -45,14 +61,38 @@ export default function Workspace({ user }) {
   const [saveStatus, setSaveStatus] = useState('idle');
   const [contextMenu, setContextMenu] = useState(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [toasts, setToasts] = useState([]);
+  const [sidebarLoading, setSidebarLoading] = useState(false);
+  const [focusedFolder, setFocusedFolder] = useState('');
   const saveTimer = useRef(null);
+  const toastId = useRef(0);
+
+  // 토스트 헬퍼
+  const addToast = useCallback((message, type = 'loading', duration = null) => {
+    const id = ++toastId.current;
+    setToasts(prev => [...prev, { id, message, type }]);
+    if (duration) setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), duration);
+    return id;
+  }, []);
+
+  const updateToast = useCallback((id, message, type, duration = 2000) => {
+    setToasts(prev => prev.map(t => t.id === id ? { ...t, message, type } : t));
+    if (duration) setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), duration);
+  }, []);
+
+  const removeToast = useCallback((id) => {
+    setToasts(prev => prev.filter(t => t.id !== id));
+  }, []);
 
   // 파일 트리 로드
-  const loadFiles = useCallback(() => {
-    fetch(`${API}/${userId}/files`)
-      .then(r => r.json())
-      .then(data => setFiles(data.files || []))
-      .catch(err => console.error('Failed to load files:', err));
+  const loadFiles = useCallback(async () => {
+    try {
+      const r = await fetch(`${API}/${userId}/files`);
+      const data = await r.json();
+      setFiles(data.files || []);
+    } catch (err) {
+      console.error('Failed to load files:', err);
+    }
   }, [userId]);
 
   useEffect(() => { loadFiles(); }, [loadFiles]);
@@ -159,29 +199,45 @@ export default function Workspace({ user }) {
     if (!name) return;
     const fileName = name.endsWith('.md') ? name : `${name}.md`;
     const fp = folderPath ? `${folderPath}/${fileName}` : fileName;
+    const tid = addToast(`📄 "${fileName}" 생성 중...`, 'loading');
+    setSidebarLoading(true);
     try {
       await fetch(`${API}/${userId}/file/${encodePath(fp)}`, {
         method: 'PUT',
         headers: authHeaders(),
         body: JSON.stringify({ content: `# ${name.replace('.md', '')}\n\n` })
       });
-      loadFiles();
+      await loadFiles();
+      updateToast(tid, `📄 "${fileName}" 생성 완료!`, 'success');
       openFile(fp);
-    } catch (err) { console.error('Failed to create file:', err); }
+    } catch (err) {
+      console.error('Failed to create file:', err);
+      updateToast(tid, `📄 "${fileName}" 생성 실패`, 'error');
+    } finally {
+      setSidebarLoading(false);
+    }
   };
 
   const handleNewFolder = async (parentPath) => {
     const name = prompt('새 폴더 이름');
     if (!name) return;
     const fp = parentPath ? `${parentPath}/${name}/.gitkeep` : `${name}/.gitkeep`;
+    const tid = addToast(`📁 "${name}" 폴더 생성 중...`, 'loading');
+    setSidebarLoading(true);
     try {
       await fetch(`${API}/${userId}/file/${encodePath(fp)}`, {
         method: 'PUT',
         headers: authHeaders(),
         body: JSON.stringify({ content: '' })
       });
-      loadFiles();
-    } catch (err) { console.error('Failed to create folder:', err); }
+      await loadFiles();
+      updateToast(tid, `📁 "${name}" 폴더 생성 완료!`, 'success');
+    } catch (err) {
+      console.error('Failed to create folder:', err);
+      updateToast(tid, `📁 "${name}" 폴더 생성 실패`, 'error');
+    } finally {
+      setSidebarLoading(false);
+    }
   };
 
   const handleRename = async (oldPath) => {
@@ -190,27 +246,51 @@ export default function Workspace({ user }) {
     if (!newName || newName === oldName) return;
     const parentPath = oldPath.includes('/') ? oldPath.substring(0, oldPath.lastIndexOf('/')) : '';
     const newPath = parentPath ? `${parentPath}/${newName}` : newName;
+    const tid = addToast(`✏️ "${oldName}" → "${newName}" 변경 중...`, 'loading');
+    setSidebarLoading(true);
     try {
       await fetch(`${API}/${userId}/rename`, {
         method: 'POST',
         headers: authHeaders(),
         body: JSON.stringify({ oldPath, newPath })
       });
-      loadFiles();
+      await loadFiles();
+      updateToast(tid, `✏️ 이름 변경 완료!`, 'success');
       if (currentFile?.path === oldPath) openFile(newPath);
-    } catch (err) { console.error('Failed to rename:', err); }
+    } catch (err) {
+      console.error('Failed to rename:', err);
+      updateToast(tid, `✏️ 이름 변경 실패`, 'error');
+    } finally {
+      setSidebarLoading(false);
+    }
   };
 
-  const handleDelete = async (fp, name) => {
-    if (!confirm(`"${name}" 삭제할까요?`)) return;
+  const handleDelete = async (fp, name, type = 'file') => {
+    const isFolder = type === 'folder';
+    const label = isFolder ? '폴더' : '파일';
+    if (!confirm(`"${name}" ${label}를 삭제할까요?${isFolder ? '\n(폴더 안의 모든 파일이 삭제됩니다)' : ''}`)) return;
+    const tid = addToast(`🗑️ "${name}" ${label} 삭제 중...`, 'loading');
+    setSidebarLoading(true);
     try {
-      await fetch(`${API}/${userId}/file/${encodePath(fp)}`, { method: 'DELETE', headers: authHeaders() });
-      loadFiles();
-      if (currentFile?.path === fp) navigate(`/${userId}`);
-    } catch (err) { console.error('Failed to delete:', err); }
+      const folderQuery = isFolder ? '?folder=true' : '';
+      await fetch(`${API}/${userId}/file/${encodePath(fp)}${folderQuery}`, { method: 'DELETE', headers: authHeaders() });
+      await loadFiles();
+      updateToast(tid, `🗑️ "${name}" ${label} 삭제 완료`, 'success');
+      if (currentFile?.path === fp || (isFolder && currentFile?.path?.startsWith(fp + '/'))) {
+        navigate(`/${userId}`);
+      }
+    } catch (err) {
+      console.error('Failed to delete:', err);
+      updateToast(tid, `🗑️ "${name}" ${label} 삭제 실패`, 'error');
+    } finally {
+      setSidebarLoading(false);
+    }
   };
 
   const handleDuplicate = async (fp) => {
+    const fileName = fp.split('/').pop();
+    const tid = addToast(`📋 "${fileName}" 복제 중...`, 'loading');
+    setSidebarLoading(true);
     try {
       const res = await fetch(`${API}/${userId}/file/${encodePath(fp)}`);
       const data = await res.json();
@@ -221,8 +301,14 @@ export default function Workspace({ user }) {
         headers: authHeaders(),
         body: JSON.stringify({ content: data.content })
       });
-      loadFiles();
-    } catch (err) { console.error('Failed to duplicate:', err); }
+      await loadFiles();
+      updateToast(tid, `📋 "${fileName}" 복제 완료!`, 'success');
+    } catch (err) {
+      console.error('Failed to duplicate:', err);
+      updateToast(tid, `📋 복제 실패`, 'error');
+    } finally {
+      setSidebarLoading(false);
+    }
   };
 
   const showContextMenu = (e, type, path, name) => {
@@ -278,18 +364,26 @@ export default function Workspace({ user }) {
 
       <div className="main">
         <aside className={`sidebar ${sidebarOpen ? 'open' : ''}`}>
-          <div className="sidebar-header" onContextMenu={(e) => showContextMenu(e, 'root', '', 'root')}>
-            <span>📁 Files</span>
+          <div className="sidebar-header" onContextMenu={(e) => { e.preventDefault(); showContextMenu(e, 'root', '', 'root'); }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 2, flex: 1, minWidth: 0 }}>
+              <span>📁 Files {sidebarLoading && <span className="sidebar-spinner">⟳</span>}</span>
+              {focusedFolder && (
+                <span className="focused-folder-label" onClick={() => setFocusedFolder('')}>
+                  📂 {focusedFolder} ✕
+                </span>
+              )}
+            </div>
             <div className="sidebar-actions">
-              <button className="sidebar-action-btn" onClick={() => handleNewFile('')} title="새 파일">📄+</button>
-              <button className="sidebar-action-btn" onClick={() => handleNewFolder('')} title="새 폴더">📁+</button>
+              <button className="sidebar-action-btn" onClick={() => handleNewFile(focusedFolder)} title={focusedFolder ? `${focusedFolder}에 새 파일` : '새 파일'} disabled={sidebarLoading}>📄+</button>
+              <button className="sidebar-action-btn" onClick={() => handleNewFolder(focusedFolder)} title={focusedFolder ? `${focusedFolder}에 새 폴더` : '새 폴더'} disabled={sidebarLoading}>📁+</button>
             </div>
           </div>
           <div className="file-tree" onContextMenu={(e) => {
+            e.preventDefault();
             if (e.target.closest('.tree-item')) return;
             showContextMenu(e, 'root', '', 'root');
           }}>
-            <FileTree items={files} currentPath={currentFile?.path} onSelect={openFile} onContextMenu={showContextMenu} />
+            <FileTree items={files} currentPath={currentFile?.path} onSelect={openFile} onContextMenu={showContextMenu} focusedFolder={focusedFolder} onFocusFolder={setFocusedFolder} />
           </div>
           <div className="sidebar-footer">v{__BUILD_VERSION__} · {__BUILD_TIME__}</div>
         </aside>
@@ -336,6 +430,8 @@ export default function Workspace({ user }) {
           onRename={handleRename} onDelete={handleDelete}
           onDuplicate={handleDuplicate} onClose={() => setContextMenu(null)} />
       )}
+
+      <Toast toasts={toasts} onRemove={removeToast} />
     </>
   );
 }
@@ -364,42 +460,100 @@ function ContextMenu({ x, y, type, path, name, onNewFile, onNewFolder, onRename,
             <div className="context-item" onClick={() => { onDuplicate(path); onClose(); }}>📋 복제</div>
           )}
           <div className="context-divider" />
-          <div className="context-item danger" onClick={() => { onDelete(path, name); onClose(); }}>🗑️ 삭제</div>
+          <div className="context-item danger" onClick={() => { onDelete(path, name, type); onClose(); }}>🗑️ 삭제</div>
         </>
       )}
     </div>
   );
 }
 
-function FileTree({ items, currentPath, onSelect, onContextMenu, depth = 0 }) {
+// 롱프레스 훅 (모바일 터치 + 데스크탑 우클릭 모두 지원)
+function useLongPress(onLongPress, onClick, ms = 500) {
+  const timerRef = useRef(null);
+  const movedRef = useRef(false);
+  const triggeredRef = useRef(false);
+
+  const start = useCallback((e) => {
+    movedRef.current = false;
+    triggeredRef.current = false;
+    const touch = e.touches?.[0];
+    const x = touch?.clientX ?? e.clientX;
+    const y = touch?.clientY ?? e.clientY;
+    timerRef.current = setTimeout(() => {
+      triggeredRef.current = true;
+      // 진동 피드백 (지원 시)
+      if (navigator.vibrate) navigator.vibrate(30);
+      onLongPress({ clientX: x, clientY: y, preventDefault: () => {}, stopPropagation: () => {} });
+    }, ms);
+  }, [onLongPress, ms]);
+
+  const move = useCallback(() => {
+    movedRef.current = true;
+    if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null; }
+  }, []);
+
+  const end = useCallback((e) => {
+    if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null; }
+    if (triggeredRef.current) {
+      e.preventDefault();
+      return;
+    }
+    if (!movedRef.current && onClick) onClick(e);
+  }, [onClick]);
+
+  return {
+    onTouchStart: start,
+    onTouchMove: move,
+    onTouchEnd: end,
+    onContextMenu: (e) => { e.preventDefault(); e.stopPropagation(); onLongPress(e); },
+  };
+}
+
+function FileTree({ items, currentPath, onSelect, onContextMenu, focusedFolder, onFocusFolder, depth = 0 }) {
   return items.map((item) => (
     <div key={item.path}>
       {item.type === 'folder' ? (
-        <FolderItem item={item} currentPath={currentPath} onSelect={onSelect} onContextMenu={onContextMenu} depth={depth} />
+        <FolderItem item={item} currentPath={currentPath} onSelect={onSelect} onContextMenu={onContextMenu} focusedFolder={focusedFolder} onFocusFolder={onFocusFolder} depth={depth} />
       ) : (
-        <div className={`tree-item ${item.path === currentPath ? 'active' : ''}`}
-          style={{ paddingLeft: 16 + depth * 16 }}
-          onClick={() => onSelect(item.path)}
-          onContextMenu={(e) => onContextMenu(e, 'file', item.path, item.name)}>
-          <span className="icon">📄</span>{item.name}
-        </div>
+        <FileItem item={item} currentPath={currentPath} onSelect={onSelect} onContextMenu={onContextMenu} depth={depth} />
       )}
     </div>
   ));
 }
 
-function FolderItem({ item, currentPath, onSelect, onContextMenu, depth }) {
+function FileItem({ item, currentPath, onSelect, onContextMenu, depth }) {
+  const longPressHandlers = useLongPress(
+    (e) => onContextMenu(e, 'file', item.path, item.name),
+    () => onSelect(item.path),
+  );
+  return (
+    <div className={`tree-item ${item.path === currentPath ? 'active' : ''}`}
+      style={{ paddingLeft: 16 + depth * 16 }}
+      {...longPressHandlers}>
+      <span className="icon">📄</span>{item.name}
+    </div>
+  );
+}
+
+function FolderItem({ item, currentPath, onSelect, onContextMenu, focusedFolder, onFocusFolder, depth }) {
   const [open, setOpen] = useState(true);
+  const isFocused = focusedFolder === item.path;
+  const longPressHandlers = useLongPress(
+    (e) => onContextMenu(e, 'folder', item.path, item.name),
+    () => {
+      setOpen(!open);
+      if (onFocusFolder) onFocusFolder(isFocused ? '' : item.path);
+    },
+  );
   return (
     <>
-      <div className="tree-item tree-folder" style={{ paddingLeft: 16 + depth * 16 }}
-        onClick={() => setOpen(!open)}
-        onContextMenu={(e) => onContextMenu(e, 'folder', item.path, item.name)}>
+      <div className={`tree-item tree-folder ${isFocused ? 'focused' : ''}`} style={{ paddingLeft: 16 + depth * 16 }}
+        {...longPressHandlers}>
         <span className="icon">{open ? '📂' : '📁'}</span>{item.name}
       </div>
       {open && item.children && (
         <div style={{ paddingLeft: 0 }}>
-          <FileTree items={item.children} currentPath={currentPath} onSelect={onSelect} onContextMenu={onContextMenu} depth={depth + 1} />
+          <FileTree items={item.children} currentPath={currentPath} onSelect={onSelect} onContextMenu={onContextMenu} focusedFolder={focusedFolder} onFocusFolder={onFocusFolder} depth={depth + 1} />
         </div>
       )}
     </>
