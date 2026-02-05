@@ -161,6 +161,27 @@ body {
   padding-left: 0;
 }
 
+.empty-folder {
+  padding: 6px 0;
+}
+
+.empty-folder-btn {
+  padding: 4px 12px;
+  background: transparent;
+  border: 1px dashed #30363d;
+  border-radius: 6px;
+  color: #484f58;
+  cursor: pointer;
+  font-size: 12px;
+  transition: all 0.2s;
+}
+
+.empty-folder-btn:hover {
+  border-color: #58a6ff;
+  color: #58a6ff;
+  background: #1f6feb11;
+}
+
 .tree-folder.focused {
   background: #1f6feb22;
   color: #58a6ff;

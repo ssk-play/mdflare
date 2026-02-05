@@ -387,7 +387,7 @@ export default function Workspace({ user }) {
             if (e.target.closest('.tree-item')) return;
             showContextMenu(e, 'root', '', 'root');
           }}>
-            <FileTree items={files} currentPath={currentFile?.path} onSelect={openFile} onContextMenu={showContextMenu} focusedFolder={focusedFolder} onFocusFolder={setFocusedFolder} />
+            <FileTree items={files} currentPath={currentFile?.path} onSelect={openFile} onContextMenu={showContextMenu} focusedFolder={focusedFolder} onFocusFolder={setFocusedFolder} onNewFile={handleNewFile} />
           </div>
           <div className="sidebar-footer">v{__BUILD_VERSION__} · {__BUILD_TIME__}</div>
         </aside>
@@ -530,11 +530,11 @@ function useLongPress(onLongPress, onClick, ms = 500) {
   };
 }
 
-function FileTree({ items, currentPath, onSelect, onContextMenu, focusedFolder, onFocusFolder, depth = 0 }) {
+function FileTree({ items, currentPath, onSelect, onContextMenu, focusedFolder, onFocusFolder, onNewFile, depth = 0 }) {
   return items.map((item) => (
     <div key={item.path}>
       {item.type === 'folder' ? (
-        <FolderItem item={item} currentPath={currentPath} onSelect={onSelect} onContextMenu={onContextMenu} focusedFolder={focusedFolder} onFocusFolder={onFocusFolder} depth={depth} />
+        <FolderItem item={item} currentPath={currentPath} onSelect={onSelect} onContextMenu={onContextMenu} focusedFolder={focusedFolder} onFocusFolder={onFocusFolder} onNewFile={onNewFile} depth={depth} />
       ) : (
         <FileItem item={item} currentPath={currentPath} onSelect={onSelect} onContextMenu={onContextMenu} depth={depth} />
       )}
@@ -556,9 +556,12 @@ function FileItem({ item, currentPath, onSelect, onContextMenu, depth }) {
   );
 }
 
-function FolderItem({ item, currentPath, onSelect, onContextMenu, focusedFolder, onFocusFolder, depth }) {
+function FolderItem({ item, currentPath, onSelect, onContextMenu, focusedFolder, onFocusFolder, onNewFile, depth }) {
   const [open, setOpen] = useState(true);
   const isFocused = focusedFolder === item.path;
+  // .gitkeep만 있는 폴더는 빈 폴더로 취급
+  const visibleChildren = item.children?.filter(c => c.name !== '.gitkeep') || [];
+  const isEmpty = visibleChildren.length === 0;
   const longPressHandlers = useLongPress(
     (e) => onContextMenu(e, 'folder', item.path, item.name),
     () => {
@@ -572,9 +575,17 @@ function FolderItem({ item, currentPath, onSelect, onContextMenu, focusedFolder,
         {...longPressHandlers}>
         <span className="icon">{open ? '📂' : '📁'}</span>{item.name}
       </div>
-      {open && item.children && (
+      {open && (
         <div style={{ paddingLeft: 0 }}>
-          <FileTree items={item.children} currentPath={currentPath} onSelect={onSelect} onContextMenu={onContextMenu} focusedFolder={focusedFolder} onFocusFolder={onFocusFolder} depth={depth + 1} />
+          {isEmpty ? (
+            <div className="empty-folder" style={{ paddingLeft: 32 + depth * 16 }}>
+              <button className="empty-folder-btn" onClick={() => onNewFile && onNewFile(item.path)}>
+                + 새 파일
+              </button>
+            </div>
+          ) : (
+            <FileTree items={visibleChildren} currentPath={currentPath} onSelect={onSelect} onContextMenu={onContextMenu} focusedFolder={focusedFolder} onFocusFolder={onFocusFolder} onNewFile={onNewFile} depth={depth + 1} />
+          )}
         </div>
       )}
     </>
