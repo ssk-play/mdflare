@@ -619,6 +619,23 @@ export default function Workspace({ user }) {
                     <button className={`tab-btn ${view === 'split' ? 'active' : ''}`} onClick={() => setView('split')}>Split</button>
                     <button className={`tab-btn ${view === 'preview' ? 'active' : ''}`} onClick={() => setView('preview')}>Preview</button>
                   </div>
+                  <button className="tab-btn" onClick={() => {
+                    const cols = parseInt(prompt('열 개수:', '3'));
+                    if (!cols || cols < 1) return;
+                    const header = '| ' + Array.from({length: cols}, (_, i) => `제목${i+1}`).join(' | ') + ' |';
+                    const sep = '| ' + Array.from({length: cols}, () => '---').join(' | ') + ' |';
+                    const row = '| ' + Array.from({length: cols}, () => '  ').join(' | ') + ' |';
+                    setContent(prev => prev + '\n' + header + '\n' + sep + '\n' + row + '\n');
+                    addToast('📊 테이블 삽입됨', 'success', 2000);
+                  }} title="테이블 삽입">📊</button>
+                  <button className="tab-btn" onClick={() => {
+                    const url = prompt('이미지 URL:');
+                    if (!url) return;
+                    const alt = prompt('대체 텍스트:', 'image') || 'image';
+                    const md = `![${alt}](${url})`;
+                    setContent(prev => prev + '\n' + md + '\n');
+                    addToast('🖼️ 이미지 삽입됨', 'success', 2000);
+                  }} title="이미지 삽입">🖼️</button>
                   <button className="tab-btn" onClick={async () => {
                     const shareUrl = `${window.location.origin}/${userId}/${currentFile.path}`;
                     try {
