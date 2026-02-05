@@ -522,6 +522,9 @@ export default function Workspace({ user }) {
     return () => window.removeEventListener('keydown', handler);
   }, [currentFile, content, savedContent, doSave]);
 
+  const statusText = { idle: '', editing: '✏️', saving: '저장 중...', saved: '✓ 저장됨', error: '⚠️ 저장 실패' };
+  const statusClass = { idle: '', editing: 'unsaved', saving: 'saving', saved: 'saved', error: 'error' };
+
   return (
     <>
       <header className="header">
@@ -666,6 +669,7 @@ export default function Workspace({ user }) {
                     URL.revokeObjectURL(url);
                     addToast('💾 다운로드 시작', 'success', 2000);
                   }} title="파일 다운로드">💾</button>
+                  <span className={`save-status ${statusClass[saveStatus]}`}>{statusText[saveStatus]}</span>
                 </div>
               </div>
               <div className="editor-stats">
