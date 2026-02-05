@@ -1,0 +1,16 @@
+{
+  "name": "mdflare",
+  "version": "0.1.0",
+  "private": true,
+  "description": "🔥 MDFlare — Local markdown folder sync to web",
+  "scripts": {
+    "dev": "concurrently \"npm run dev:server\" \"npm run dev:web\"",
+    "dev:server": "node server/index.js",
+    "dev:web": "cd web && npx vite"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.21.0",
+    "concurrently": "^9.0.0"
+  }
+}
