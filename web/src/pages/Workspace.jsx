@@ -548,7 +548,25 @@ export default function Workspace({ user }) {
             ) : (
             <>
               <div className="editor-toolbar">
-                <span className="file-path">{currentFile.path}</span>
+                <span className="file-path">
+                  {(() => {
+                    const parts = currentFile.path.split('/');
+                    return parts.map((part, i) => (
+                      <span key={i}>
+                        {i > 0 && <span className="breadcrumb-sep">/</span>}
+                        {i < parts.length - 1 ? (
+                          <span className="breadcrumb-link" onClick={() => {
+                            const folderPath = parts.slice(0, i + 1).join('/');
+                            setFocusedFolder(folderPath);
+                            setSidebarOpen(true);
+                          }}>{part}</span>
+                        ) : (
+                          <span className="breadcrumb-current">{part}</span>
+                        )}
+                      </span>
+                    ));
+                  })()}
+                </span>
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                   <div className="tab-bar">
                     <button className={`tab-btn ${view === 'edit' ? 'active' : ''}`} onClick={() => setView('edit')}>Edit</button>
