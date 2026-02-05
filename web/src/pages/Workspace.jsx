@@ -394,6 +394,12 @@ export default function Workspace({ user }) {
 
         <div className="editor-area">
           {currentFile ? (
+            currentFile.loading ? (
+              <div className="empty-state">
+                <div className="loading-spinner">⟳</div>
+                <p>불러오는 중...</p>
+              </div>
+            ) : (
             <>
               <div className="editor-toolbar">
                 <span className="file-path">{currentFile.path}</span>
@@ -419,6 +425,7 @@ export default function Workspace({ user }) {
                 )}
               </div>
             </>
+            )
           ) : (
             <div className="empty-state">
               <div className="logo">🔥</div>
