@@ -5,7 +5,7 @@ export default defineConfig({
   define: {
     __BUILD_TIME__: JSON.stringify(new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })),
     __BUILD_VERSION__: JSON.stringify(process.env.npm_package_version || '0.1.0'),
-    __LAST_CHANGE__: JSON.stringify('버그픽스: setClipboard 잔여 참조 제거'),
+    __LAST_CHANGE__: JSON.stringify('사이드바 파일 검색 기능 추가'),
   },
   plugins: [react()],
   server: {

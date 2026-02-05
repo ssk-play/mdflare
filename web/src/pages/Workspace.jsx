@@ -65,6 +65,7 @@ export default function Workspace({ user }) {
   const [focusedFolder, setFocusedFolder] = useState('');
   const [dragOver, setDragOver] = useState(null);
   const [dragSrc, setDragSrc] = useState(null);
+  const [searchQuery, setSearchQuery] = useState('');
   const saveTimer = useRef(null);
   const toastId = useRef(0);
 
@@ -200,6 +201,25 @@ export default function Workspace({ user }) {
   useEffect(() => {
     return () => { if (saveTimer.current) clearTimeout(saveTimer.current); };
   }, []);
+
+  // 파일 트리 검색 필터
+  const filterFiles = useCallback((items, query) => {
+    if (!query) return items;
+    const q = query.toLowerCase();
+    return items.reduce((acc, item) => {
+      if (item.type === 'folder') {
+        const filteredChildren = filterFiles(item.children || [], query);
+        if (filteredChildren.length > 0 || item.name.toLowerCase().includes(q)) {
+          acc.push({ ...item, children: filteredChildren });
+        }
+      } else if (item.name.toLowerCase().includes(q)) {
+        acc.push(item);
+      }
+      return acc;
+    }, []);
+  }, []);
+
+  const filteredFiles = searchQuery ? filterFiles(files, searchQuery) : files;
 
   // 파일 트리에서 경로 존재 여부 확인
   const pathExists = useCallback((targetPath, items) => {
@@ -470,6 +490,10 @@ export default function Workspace({ user }) {
               <button className="sidebar-action-btn" onClick={() => handleNewFolder(focusedFolder)} title={focusedFolder ? `${focusedFolder}에 새 폴더` : '새 폴더'} disabled={sidebarLoading}>📁+</button>
             </div>
           </div>
+          <div className="sidebar-search">
+            <input type="text" placeholder="🔍 파일 검색..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="search-input" />
+            {searchQuery && <button className="search-clear" onClick={() => setSearchQuery('')}>✕</button>}
+          </div>
           <div className="file-tree" onContextMenu={(e) => {
             e.preventDefault();
             if (e.target.closest('.tree-item')) return;
@@ -477,7 +501,7 @@ export default function Workspace({ user }) {
           }}
             onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; }}
             onDrop={(e) => { e.preventDefault(); const src = e.dataTransfer.getData('text/plain'); if (src) handleMove(src, ''); }}>
-            <FileTree items={files} currentPath={currentFile?.path} onSelect={openFile} onContextMenu={showContextMenu} focusedFolder={focusedFolder} onFocusFolder={setFocusedFolder} onNewFile={handleNewFile} onDragMove={handleMove} dragOver={dragOver} onDragOver={setDragOver} dragSrc={dragSrc} onDragStart={setDragSrc} />
+            <FileTree items={filteredFiles} currentPath={currentFile?.path} onSelect={openFile} onContextMenu={showContextMenu} focusedFolder={focusedFolder} onFocusFolder={setFocusedFolder} onNewFile={handleNewFile} onDragMove={handleMove} dragOver={dragOver} onDragOver={setDragOver} dragSrc={dragSrc} onDragStart={setDragSrc} />
           </div>
           <div className="sidebar-footer">
             <span title={__LAST_CHANGE__}>v{__BUILD_VERSION__} · {__LAST_CHANGE__}</span>

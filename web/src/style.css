@@ -151,6 +151,48 @@ body {
   display: none;
 }
 
+.sidebar-search {
+  padding: 4px 12px 8px;
+  position: relative;
+}
+
+.search-input {
+  width: 100%;
+  padding: 6px 28px 6px 10px;
+  background: #0d1117;
+  border: 1px solid #30363d;
+  border-radius: 6px;
+  color: #e6edf3;
+  font-size: 13px;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.search-input:focus {
+  border-color: #58a6ff;
+}
+
+.search-input::placeholder {
+  color: #484f58;
+}
+
+.search-clear {
+  position: absolute;
+  right: 16px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  color: #484f58;
+  cursor: pointer;
+  font-size: 12px;
+  padding: 2px 4px;
+}
+
+.search-clear:hover {
+  color: #e6edf3;
+}
+
 .file-tree {
   flex: 1;
   overflow-y: auto;
