@@ -763,10 +763,10 @@ body {
     flex-direction: column;
   }
 
-  /* 사이드바: 기본 숨김, 토글로 표시 */
+  /* 사이드바: 접힌 상태에서도 미니바 표시 */
   .sidebar {
     width: 100%;
-    max-height: 0;
+    max-height: 32px;
     overflow: hidden;
     transition: max-height 0.3s ease-out;
     border-right: none;
@@ -776,6 +776,26 @@ body {
   .sidebar.open {
     max-height: 50vh;
     overflow-y: auto;
+  }
+
+  .sidebar-collapsed {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 16px;
+    font-size: 12px;
+    color: #8b949e;
+    cursor: pointer;
+    height: 32px;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .sidebar-collapsed:active {
+    background: #21262d;
+  }
+
+  .sidebar.open .sidebar-collapsed {
+    display: none;
   }
 
   .sidebar-handle {
