@@ -72,13 +72,13 @@ impl Config {
 
 #[derive(Debug, Deserialize)]
 struct FileItem {
+    #[allow(dead_code)]
     name: String,
     path: String,
     #[serde(rename = "type")]
     file_type: String,
     #[allow(dead_code)]
     size: Option<u64>,
-    #[allow(dead_code)]
     modified: Option<String>,
     children: Option<Vec<FileItem>>,
 }
@@ -160,6 +160,7 @@ struct SyncEngine {
     api: ApiClient,
     local_path: PathBuf,
     local_hashes: HashMap<String, String>,
+    remote_modified: HashMap<String, String>,
 }
 
 impl SyncEngine {
@@ -168,6 +169,7 @@ impl SyncEngine {
             api: ApiClient::new(&config.api_base, &config.username, &config.api_token),
             local_path: PathBuf::from(&config.local_path),
             local_hashes: HashMap::new(),
+            remote_modified: HashMap::new(),
         }
     }
 
@@ -179,7 +181,7 @@ impl SyncEngine {
         format!("{:x}", hash)
     }
 
-    fn flatten_files(items: &[FileItem]) -> Vec<String> {
+    fn flatten_files(items: &[FileItem]) -> Vec<(String, Option<String>)> {
         let mut result = Vec::new();
         for item in items {
             if item.file_type == "folder" {
@@ -187,7 +189,7 @@ impl SyncEngine {
                     result.extend(Self::flatten_files(children));
                 }
             } else if item.file_type == "file" {
-                result.push(item.path.clone());
+                result.push((item.path.clone(), item.modified.clone()));
             }
         }
         result
@@ -218,36 +220,61 @@ impl SyncEngine {
 
         // 서버 파일 목록
         let remote_files = self.api.list_files()?;
-        let remote_paths = Self::flatten_files(&remote_files);
+        let remote_items = Self::flatten_files(&remote_files);
+        let remote_paths: Vec<String> = remote_items.iter().map(|(p, _)| p.clone()).collect();
 
         // 로컬 파일 목록
         let local_paths = self.scan_local_md_files();
 
-        // 서버 → 로컬 (다운로드)
-        for path in &remote_paths {
+        // 서버 → 로컬 (다운로드: 새 파일 또는 변경된 파일)
+        for (path, modified) in &remote_items {
             let local_file = self.local_path.join(path);
-            if !local_file.exists() {
-                if let Ok(content) = self.api.get_file(path) {
-                    if let Some(parent) = local_file.parent() {
-                        fs::create_dir_all(parent).ok();
+            let should_download = if !local_file.exists() {
+                true
+            } else if let Some(mod_time) = modified {
+                // 서버 파일이 변경됐는지 확인
+                self.remote_modified.get(path) != Some(mod_time)
+            } else {
+                false
+            };
+
+            if should_download {
+                match self.api.get_file(path) {
+                    Ok(content) => {
+                        if let Some(parent) = local_file.parent() {
+                            fs::create_dir_all(parent).ok();
+                        }
+                        if let Err(e) = fs::write(&local_file, &content.content) {
+                            log::error!("파일 쓰기 실패 {}: {}", path, e);
+                            continue;
+                        }
+                        self.local_hashes.insert(path.clone(), Self::simple_hash(&content.content));
+                        if let Some(mod_time) = modified {
+                            self.remote_modified.insert(path.clone(), mod_time.clone());
+                        }
+                        println!("⬇️ {}", path);
+                        downloaded += 1;
                     }
-                    fs::write(&local_file, &content.content).ok();
-                    self.local_hashes.insert(path.clone(), Self::simple_hash(&content.content));
-                    println!("⬇️ {}", path);
-                    downloaded += 1;
+                    Err(e) => log::error!("파일 다운로드 실패 {}: {}", path, e),
                 }
             }
         }
 
-        // 로컬 → 서버 (업로드)
+        // 로컬 → 서버 (업로드: 새 파일)
         for path in &local_paths {
             if !remote_paths.contains(path) {
                 let local_file = self.local_path.join(path);
-                if let Ok(content) = fs::read_to_string(&local_file) {
-                    self.api.put_file(path, &content).ok();
-                    self.local_hashes.insert(path.clone(), Self::simple_hash(&content));
-                    println!("⬆️ {}", path);
-                    uploaded += 1;
+                match fs::read_to_string(&local_file) {
+                    Ok(content) => {
+                        if let Err(e) = self.api.put_file(path, &content) {
+                            log::error!("파일 업로드 실패 {}: {}", path, e);
+                            continue;
+                        }
+                        self.local_hashes.insert(path.clone(), Self::simple_hash(&content));
+                        println!("⬆️ {}", path);
+                        uploaded += 1;
+                    }
+                    Err(e) => log::error!("파일 읽기 실패 {}: {}", path, e),
                 }
             }
         }
