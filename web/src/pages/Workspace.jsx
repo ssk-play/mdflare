@@ -272,6 +272,9 @@ export default function Workspace({ user }) {
   // 파일/폴더 이동
   const handleMove = async (sourcePath, targetFolder) => {
     const name = sourcePath.split('/').pop();
+    const sourceParent = sourcePath.includes('/') ? sourcePath.substring(0, sourcePath.lastIndexOf('/')) : '';
+    // 같은 폴더로 이동 시 무시
+    if (sourceParent === targetFolder) return;
     const newPath = targetFolder ? `${targetFolder}/${name}` : name;
     if (sourcePath === newPath) return;
     if (newPath.startsWith(sourcePath + '/')) {
@@ -678,7 +681,14 @@ function FolderItem({ item, currentPath, onSelect, onContextMenu, focusedFolder,
     <>
       <div className={`tree-item tree-folder ${isFocused ? 'focused' : ''} ${isDragOver ? 'drag-over' : ''}`}
         style={{ paddingLeft: 16 + depth * 16 }}
-        onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; onDragOver(item.path); }}
+        onDragOver={(e) => {
+          e.preventDefault();
+          const src = e.dataTransfer.types.includes('text/plain') ? true : false;
+          if (src) {
+            e.dataTransfer.dropEffect = 'move';
+            onDragOver(item.path);
+          }
+        }}
         onDragLeave={() => onDragOver(null)}
         onDrop={(e) => { e.preventDefault(); const src = e.dataTransfer.getData('text/plain'); onDragOver(null); if (src && onDragMove) onDragMove(src, item.path); }}
         {...longPressHandlers}>
