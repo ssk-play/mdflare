@@ -234,6 +234,36 @@ export default function Workspace({ user }) {
     }
   };
 
+  const handleGenerateSamples = async () => {
+    if (!confirm('샘플 폴더와 파일을 생성할까요?')) return;
+    const tid = addToast('🎲 샘플 생성 중...', 'loading');
+    setSidebarLoading(true);
+    const samples = [
+      { path: 'Getting Started/welcome.md', content: '# Welcome to MDFlare! 🔥\n\nThis is your markdown workspace.\n\n## Quick Tips\n- Click any file to edit\n- Auto-saves after 1 second\n- Right-click for more options\n' },
+      { path: 'Getting Started/markdown-guide.md', content: '# Markdown Guide\n\n## Headers\n# H1\n## H2\n### H3\n\n## Formatting\n**bold** *italic* ~~strikethrough~~\n\n## Lists\n- Item 1\n- Item 2\n  - Nested\n\n## Code\n```js\nconsole.log("Hello MDFlare!");\n```\n\n## Links\n[MDFlare](https://mdflare.com)\n' },
+      { path: 'Notes/ideas.md', content: '# 💡 Ideas\n\n- [ ] Build something awesome\n- [ ] Share with the world\n- [x] Try MDFlare\n' },
+      { path: 'Notes/meeting-notes.md', content: '# 📝 Meeting Notes\n\n## 2025-01-15\n- Discussed project roadmap\n- Next milestone: v1.0 launch\n- Action items:\n  1. Finalize design\n  2. Write documentation\n' },
+      { path: 'Projects/project-alpha.md', content: '# Project Alpha 🚀\n\n## Overview\nA brief description of the project.\n\n## Status\n| Task | Status |\n|------|--------|\n| Design | ✅ Done |\n| Backend | 🔄 In Progress |\n| Frontend | 📋 Todo |\n\n## Notes\nKeep track of important decisions here.\n' },
+      { path: 'journal.md', content: '# 📔 Journal\n\n## Today\nStarted using MDFlare for my notes.\nLove the clean interface and auto-save!\n\n---\n\n> "The best time to start writing is now."\n' },
+    ];
+    try {
+      for (const s of samples) {
+        await fetch(`${API}/${userId}/file/${encodePath(s.path)}`, {
+          method: 'PUT',
+          headers: authHeaders(),
+          body: JSON.stringify({ content: s.content })
+        });
+      }
+      await loadFiles();
+      updateToast(tid, '🎲 샘플 생성 완료! (3폴더 + 6파일)', 'success', 3000);
+    } catch (err) {
+      console.error('Failed to generate samples:', err);
+      updateToast(tid, '🎲 샘플 생성 실패', 'error');
+    } finally {
+      setSidebarLoading(false);
+    }
+  };
+
   const handleNewFolder = async (parentPath) => {
     const name = prompt('새 폴더 이름');
     if (!name) return;
@@ -420,7 +450,10 @@ export default function Workspace({ user }) {
           }}>
             <FileTree items={files} currentPath={currentFile?.path} onSelect={openFile} onContextMenu={showContextMenu} focusedFolder={focusedFolder} onFocusFolder={setFocusedFolder} onNewFile={handleNewFile} />
           </div>
-          <div className="sidebar-footer">v{__BUILD_VERSION__} · {__BUILD_TIME__}</div>
+          <div className="sidebar-footer">
+            <span>v{__BUILD_VERSION__} · {__BUILD_TIME__}</span>
+            <button className="sample-btn" onClick={handleGenerateSamples} disabled={sidebarLoading}>🎲 샘플</button>
+          </div>
           <div className="sidebar-handle" onClick={() => setSidebarOpen(false)}>
             <div className="sidebar-handle-bar" />
           </div>

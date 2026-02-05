@@ -121,6 +121,30 @@ body {
   border-top: 1px solid #30363d;
   text-align: center;
   flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.sample-btn {
+  padding: 2px 8px;
+  background: transparent;
+  border: 1px dashed #30363d;
+  border-radius: 4px;
+  color: #484f58;
+  cursor: pointer;
+  font-size: 10px;
+  transition: all 0.2s;
+}
+
+.sample-btn:hover {
+  border-color: #f0883e;
+  color: #f0883e;
+}
+
+.sample-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 .sidebar-handle {
