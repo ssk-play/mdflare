@@ -25,7 +25,7 @@ export default function App() {
   const [currentFile, setCurrentFile] = useState(null);
   const [content, setContent] = useState('');
   const [savedContent, setSavedContent] = useState('');
-  const [view, setView] = useState('split');
+  const [view, setView] = useState('edit');
   const [saveStatus, setSaveStatus] = useState('idle'); // idle | saving | saved | error
   const saveTimer = useRef(null);
 
