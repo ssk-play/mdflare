@@ -781,13 +781,14 @@ body {
   .sidebar-collapsed {
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    padding: 6px 16px;
+    justify-content: center;
+    padding: 6px 0;
     font-size: 12px;
-    color: #8b949e;
+    color: #484f58;
     cursor: pointer;
     height: 32px;
     -webkit-tap-highlight-color: transparent;
+    transition: color 0.2s;
   }
 
   .sidebar-collapsed:active {

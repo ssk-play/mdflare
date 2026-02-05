@@ -417,8 +417,7 @@ export default function Workspace({ user }) {
         <aside className={`sidebar ${sidebarOpen ? 'open' : ''}`}>
           {!sidebarOpen && (
             <div className="sidebar-collapsed" onClick={() => setSidebarOpen(true)}>
-              <span>📁 Files</span>
-              <span>▼</span>
+              ▼
             </div>
           )}
           <div className="sidebar-header" onContextMenu={(e) => { e.preventDefault(); showContextMenu(e, 'root', '', 'root'); }}>
