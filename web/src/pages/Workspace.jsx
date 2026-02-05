@@ -461,6 +461,7 @@ export default function Workspace({ user }) {
   const handleGenerateToken = async () => {
     if (!user) return;
     if (!confirm('API 토큰을 생성하시겠습니까?\n기존 토큰은 무효화됩니다.')) return;
+    const tid = addToast('🔑 토큰 생성 중...', 'loading');
     try {
       const res = await fetch('/api/token/generate', {
         method: 'POST',
@@ -469,12 +470,14 @@ export default function Workspace({ user }) {
       });
       const data = await res.json();
       if (data.token) {
-        prompt('API 토큰이 생성되었습니다.\n에이전트 앱에 입력하세요:', data.token);
+        await navigator.clipboard.writeText(data.token);
+        updateToast(tid, '🔑 토큰 생성 완료! 클립보드에 복사됨', 'success', 3000);
+        alert(`🔑 API 토큰 (클립보드에 복사됨)\n\n${data.token}\n\n에이전트 앱 설정에 붙여넣기 하세요.`);
       } else {
-        alert('토큰 생성 실패: ' + (data.error || '알 수 없는 오류'));
+        updateToast(tid, '토큰 생성 실패: ' + (data.error || '알 수 없는 오류'), 'error');
       }
     } catch (err) {
-      alert('토큰 생성 실패');
+      updateToast(tid, '토큰 생성 실패', 'error');
     }
   };
 
