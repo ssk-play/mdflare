@@ -368,11 +368,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
     
     @objc func showSetup() {
+        showSetupDialog(savedUsername: "", savedToken: "", savedFolder: "")
+    }
+    
+    private func showSetupDialog(savedUsername: String, savedToken: String, savedFolder: String) {
         let alert = NSAlert()
         alert.messageText = "MDFlare Agent 설정"
-        alert.informativeText = "웹에서 🔑 API 토큰을 먼저 발급받으세요."
+        alert.informativeText = "1. 아래 '웹에서 토큰 발급' 클릭\n2. Google 로그인 → 🔑 API 토큰 버튼\n3. 토큰 복사 후 아래에 붙여넣기"
         
-        let stack = NSStackView(frame: NSRect(x: 0, y: 0, width: 300, height: 120))
+        let stack = NSStackView(frame: NSRect(x: 0, y: 0, width: 300, height: 160))
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 8
@@ -380,14 +384,18 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let usernameLabel = NSTextField(labelWithString: "사용자 이름:")
         let usernameField = NSTextField(frame: NSRect(x: 0, y: 0, width: 300, height: 24))
         usernameField.placeholderString = "your-username"
+        usernameField.stringValue = savedUsername
         
         let tokenLabel = NSTextField(labelWithString: "API 토큰:")
         let tokenField = NSTextField(frame: NSRect(x: 0, y: 0, width: 300, height: 24))
         tokenField.placeholderString = "웹에서 발급받은 토큰 붙여넣기"
+        tokenField.stringValue = savedToken
         
-        let folderLabel = NSTextField(labelWithString: "동기화 폴더 경로:")
+        let folderLabel = NSTextField(labelWithString: "동기화 폴더:")
         let folderField = NSTextField(frame: NSRect(x: 0, y: 0, width: 300, height: 24))
-        folderField.placeholderString = "/Users/you/notes"
+        folderField.placeholderString = "아래 '폴더 선택' 클릭"
+        folderField.stringValue = savedFolder
+        folderField.isEditable = false
         
         stack.addArrangedSubview(usernameLabel)
         stack.addArrangedSubview(usernameField)
@@ -402,33 +410,19 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
         
         alert.accessoryView = stack
-        alert.addButton(withTitle: "시작")
-        alert.addButton(withTitle: "폴더 선택")
-        alert.addButton(withTitle: "취소")
+        alert.addButton(withTitle: "시작")              // 1st
+        alert.addButton(withTitle: "폴더 선택")          // 2nd
+        alert.addButton(withTitle: "웹에서 토큰 발급")    // 3rd
+        alert.addButton(withTitle: "취소")               // 4th
         
         let response = alert.runModal()
         
-        if response == .alertSecondButtonReturn {
-            let panel = NSOpenPanel()
-            panel.canChooseDirectories = true
-            panel.canChooseFiles = false
-            panel.canCreateDirectories = true
-            if panel.runModal() == .OK, let url = panel.url {
-                folderField.stringValue = url.path
-            }
-            let username = usernameField.stringValue
-            let token = tokenField.stringValue
-            let folderPath = folderField.stringValue
-            if !username.isEmpty && !token.isEmpty && !folderPath.isEmpty {
-                saveConfig(username: username, token: token, folderPath: folderPath)
-            }
-            return
-        }
-        
         if response == .alertFirstButtonReturn {
+            // 시작
             let username = usernameField.stringValue.lowercased().trimmingCharacters(in: .whitespaces)
             let token = tokenField.stringValue.trimmingCharacters(in: .whitespaces)
             let folderPath = folderField.stringValue
+            
             if !username.isEmpty && !token.isEmpty && !folderPath.isEmpty {
                 saveConfig(username: username, token: token, folderPath: folderPath)
             } else {
@@ -436,8 +430,38 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 err.messageText = "모든 필드를 입력해주세요"
                 err.informativeText = "사용자 이름, API 토큰, 폴더 경로가 모두 필요합니다."
                 err.runModal()
+                // 다시 다이얼로그 표시 (입력값 유지)
+                showSetupDialog(savedUsername: usernameField.stringValue,
+                               savedToken: tokenField.stringValue,
+                               savedFolder: folderField.stringValue)
             }
+        } else if response == .alertSecondButtonReturn {
+            // 폴더 선택 → 선택 후 다시 다이얼로그 표시
+            let panel = NSOpenPanel()
+            panel.canChooseDirectories = true
+            panel.canChooseFiles = false
+            panel.canCreateDirectories = true
+            panel.message = "동기화할 마크다운 폴더를 선택하세요"
+            
+            var folder = savedFolder
+            if panel.runModal() == .OK, let url = panel.url {
+                folder = url.path
+            }
+            // 입력값 유지하면서 다시 표시
+            showSetupDialog(savedUsername: usernameField.stringValue,
+                           savedToken: tokenField.stringValue,
+                           savedFolder: folder)
+        } else if response == .alertThirdButtonReturn {
+            // 웹 브라우저에서 토큰 발급 페이지 열기
+            if let url = URL(string: "https://mdflare.com") {
+                NSWorkspace.shared.open(url)
+            }
+            // 입력값 유지하면서 다시 표시
+            showSetupDialog(savedUsername: usernameField.stringValue,
+                           savedToken: tokenField.stringValue,
+                           savedFolder: folderField.stringValue)
         }
+        // 취소는 그냥 닫힘
     }
     
     private func saveConfig(username: String, token: String, folderPath: String) {
