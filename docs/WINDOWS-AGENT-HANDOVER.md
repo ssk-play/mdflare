@@ -1,6 +1,6 @@
-# MDFlare Windows Agent 개발 인수인계 문서
+# MDFlare Windows Agent 개발 인수인계 문서 (Rust)
 
-> 이 문서 하나로 Windows 에이전트 개발을 바로 시작할 수 있습니다.
+> 이 문서 하나로 Rust 기반 Windows 에이전트 개발을 바로 시작할 수 있습니다.
 
 ## 📁 프로젝트 구조
 
@@ -10,10 +10,11 @@
 │   ├── src/                # React 앱
 │   ├── functions/          # Cloudflare Pages Functions (API)
 │   └── dist/               # 빌드 결과물
-├── agent/                  # macOS 에이전트 (참고용)
+├── agent/                  # macOS 에이전트 (Swift, 참고용)
 │   └── MDFlareAgent/
 │       └── Sources/
 │           └── main.swift  # 전체 코드 (단일 파일)
+├── agent-rust/             # ← 새로 만들 Rust 에이전트
 └── docs/                   # 문서
 ```
 
@@ -22,6 +23,50 @@
 - **웹사이트:** https://mdflare.com
 - **API Base:** https://mdflare.com/api
 - **GitHub:** https://github.com/ssk-play/mdflare
+
+## 🦀 Rust 기술 스택
+
+```toml
+# Cargo.toml
+[package]
+name = "mdflare-agent"
+version = "1.0.0"
+edition = "2021"
+
+[dependencies]
+# HTTP 클라이언트
+reqwest = { version = "0.11", features = ["json", "blocking"] }
+
+# JSON 직렬화
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# 시스템 트레이
+tray-item = "0.10"          # 간단한 트레이 (Windows/macOS/Linux)
+# 또는 tauri = "1.5"        # 더 풍부한 UI 필요시
+
+# 파일 감시
+notify = "6.0"
+
+# 설정 파일 경로
+directories = "5.0"
+
+# 비동기 런타임 (선택)
+tokio = { version = "1", features = ["full"] }
+
+# 로깅
+log = "0.4"
+env_logger = "0.10"
+
+# Windows 전용
+[target.'cfg(windows)'.dependencies]
+winreg = "0.52"             # 레지스트리 (URL scheme 등록)
+
+[profile.release]
+opt-level = "z"             # 바이너리 크기 최소화
+lto = true
+strip = true
+```
 
 ## 🔐 인증 방식: 브라우저 OAuth (Custom URL Scheme)
 
@@ -33,17 +78,54 @@
 4. 에이전트 → URL scheme 수신 → 토큰 저장 → 동기화 시작
 ```
 
-### Windows에서 Custom URL Scheme 등록
-레지스트리에 등록 필요:
-```
-HKEY_CURRENT_USER\Software\Classes\mdflare
-├── (Default) = "URL:MDFlare Protocol"
-├── URL Protocol = ""
-└── shell\open\command\
-    └── (Default) = "C:\Path\To\MDFlareAgent.exe" "%1"
+### Windows URL Scheme 등록 (Rust)
+
+```rust
+use winreg::enums::*;
+use winreg::RegKey;
+
+fn register_url_scheme(exe_path: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let hkcu = RegKey::predef(HKEY_CURRENT_USER);
+    let (key, _) = hkcu.create_subkey("Software\\Classes\\mdflare")?;
+    
+    key.set_value("", &"URL:MDFlare Protocol")?;
+    key.set_value("URL Protocol", &"")?;
+    
+    let (cmd_key, _) = key.create_subkey("shell\\open\\command")?;
+    cmd_key.set_value("", &format!("\"{}\" \"%1\"", exe_path))?;
+    
+    Ok(())
+}
 ```
 
-또는 설치 시 자동 등록하는 코드 필요.
+### URL Scheme 콜백 수신
+앱 시작 시 커맨드라인 인자 확인:
+```rust
+fn main() {
+    let args: Vec<String> = std::env::args().collect();
+    
+    // mdflare://callback?uid=xxx&username=xxx&token=xxx
+    if args.len() > 1 && args[1].starts_with("mdflare://") {
+        handle_oauth_callback(&args[1]);
+        return;
+    }
+    
+    // 일반 실행
+    run_tray_app();
+}
+
+fn handle_oauth_callback(url: &str) {
+    let url = url::Url::parse(url).unwrap();
+    let params: HashMap<_, _> = url.query_pairs().collect();
+    
+    let username = params.get("username").unwrap();
+    let token = params.get("token").unwrap();
+    
+    // 설정 저장 후 메인 앱으로 전환
+    save_config(username, token);
+    run_tray_app();
+}
+```
 
 ## 📡 API 명세
 
@@ -54,237 +136,285 @@ Authorization: Bearer {token}
 - GET 요청은 인증 불필요 (공개 읽기)
 - PUT/POST/DELETE는 인증 필수
 
-### 엔드포인트
+### Rust API Client 구조
 
-#### 1. 파일 목록 조회
-```
-GET /api/{username}/files
+```rust
+use reqwest::blocking::Client;
+use serde::{Deserialize, Serialize};
 
-Response:
-{
-  "user": "username",
-  "files": [
-    {
-      "name": "note.md",
-      "path": "note.md",
-      "type": "file",
-      "size": 1234,
-      "modified": "2024-02-05T12:00:00.000Z"
-    },
-    {
-      "name": "folder",
-      "path": "folder",
-      "type": "folder",
-      "children": [...]
+struct ApiClient {
+    client: Client,
+    base_url: String,
+    username: String,
+    token: String,
+}
+
+#[derive(Deserialize)]
+struct FileItem {
+    name: String,
+    path: String,
+    #[serde(rename = "type")]
+    file_type: String,
+    size: Option<u64>,
+    modified: Option<String>,
+    children: Option<Vec<FileItem>>,
+}
+
+#[derive(Deserialize)]
+struct FilesResponse {
+    user: String,
+    files: Vec<FileItem>,
+}
+
+#[derive(Deserialize)]
+struct FileContent {
+    path: String,
+    content: String,
+    size: u64,
+    modified: String,
+}
+
+impl ApiClient {
+    fn new(base_url: &str, username: &str, token: &str) -> Self {
+        Self {
+            client: Client::new(),
+            base_url: base_url.to_string(),
+            username: username.to_string(),
+            token: token.to_string(),
+        }
     }
-  ]
+    
+    // 파일 목록 조회
+    fn list_files(&self) -> Result<Vec<FileItem>, reqwest::Error> {
+        let url = format!("{}/api/{}/files", self.base_url, self.username);
+        let resp: FilesResponse = self.client.get(&url).send()?.json()?;
+        Ok(resp.files)
+    }
+    
+    // 파일 내용 조회
+    fn get_file(&self, path: &str) -> Result<FileContent, reqwest::Error> {
+        let encoded = urlencoding::encode(path);
+        let url = format!("{}/api/{}/file/{}", self.base_url, self.username, encoded);
+        self.client.get(&url).send()?.json()
+    }
+    
+    // 파일 저장
+    fn put_file(&self, path: &str, content: &str) -> Result<(), reqwest::Error> {
+        let encoded = urlencoding::encode(path);
+        let url = format!("{}/api/{}/file/{}", self.base_url, self.username, encoded);
+        self.client
+            .put(&url)
+            .header("Authorization", format!("Bearer {}", self.token))
+            .json(&serde_json::json!({ "content": content }))
+            .send()?;
+        Ok(())
+    }
+    
+    // 파일 삭제
+    fn delete_file(&self, path: &str) -> Result<(), reqwest::Error> {
+        let encoded = urlencoding::encode(path);
+        let url = format!("{}/api/{}/file/{}", self.base_url, self.username, encoded);
+        self.client
+            .delete(&url)
+            .header("Authorization", format!("Bearer {}", self.token))
+            .send()?;
+        Ok(())
+    }
 }
 ```
 
-#### 2. 파일 내용 조회
-```
-GET /api/{username}/file/{path}
+## 💾 설정 파일
 
-Response:
-{
-  "path": "folder/note.md",
-  "content": "# Hello\n\nContent here...",
-  "size": 1234,
-  "modified": "2024-02-05T12:00:00.000Z"
+### 경로
+```rust
+use directories::ProjectDirs;
+
+fn config_path() -> PathBuf {
+    let proj = ProjectDirs::from("com", "mdflare", "agent").unwrap();
+    proj.config_dir().join("config.json")
+}
+// Windows: C:\Users\{User}\AppData\Roaming\mdflare\agent\config.json
+```
+
+### 구조
+```rust
+#[derive(Serialize, Deserialize)]
+struct Config {
+    api_base: String,       // "https://mdflare.com"
+    username: String,       // "user123"
+    local_path: String,     // "C:\\Users\\...\\MDFlare"
+    api_token: String,      // "agent_abc123..."
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            api_base: "https://mdflare.com".to_string(),
+            username: String::new(),
+            local_path: String::new(),
+            api_token: String::new(),
+        }
+    }
 }
 ```
 
-#### 3. 파일 저장/생성
-```
-PUT /api/{username}/file/{path}
-Authorization: Bearer {token}
-Content-Type: application/json
+## 🔄 파일 감시 (notify)
 
-Body:
-{
-  "content": "# New content\n\nHello world"
-}
+```rust
+use notify::{Watcher, RecursiveMode, watcher};
+use std::sync::mpsc::channel;
+use std::time::Duration;
 
-Response:
-{
-  "saved": true,
-  "path": "note.md",
-  "size": 28
-}
-```
-
-#### 4. 파일 삭제
-```
-DELETE /api/{username}/file/{path}
-Authorization: Bearer {token}
-
-Response:
-{
-  "deleted": true,
-  "path": "note.md"
+fn watch_files(path: &str, on_change: impl Fn(&Path)) {
+    let (tx, rx) = channel();
+    
+    let mut watcher = watcher(tx, Duration::from_secs(1)).unwrap();
+    watcher.watch(path, RecursiveMode::Recursive).unwrap();
+    
+    loop {
+        match rx.recv() {
+            Ok(event) => {
+                if let notify::DebouncedEvent::Write(path) = event {
+                    if path.extension().map_or(false, |e| e == "md") {
+                        on_change(&path);
+                    }
+                }
+            }
+            Err(e) => println!("Watch error: {:?}", e),
+        }
+    }
 }
 ```
 
-#### 5. 파일/폴더 이름 변경
-```
-POST /api/{username}/rename
-Authorization: Bearer {token}
-Content-Type: application/json
+## 🖥️ 시스템 트레이 (tray-item)
 
-Body:
-{
-  "oldPath": "old-name.md",
-  "newPath": "new-name.md"
+```rust
+use tray_item::TrayItem;
+
+fn run_tray_app() {
+    let mut tray = TrayItem::new("MDFlare", "flame-icon").unwrap();
+    
+    tray.add_label("👤 username").unwrap();
+    tray.add_label("📁 ~/Documents/MDFlare").unwrap();
+    
+    tray.inner_mut().add_separator().unwrap();
+    
+    tray.add_menu_item("🔄 지금 동기화", || {
+        sync_now();
+    }).unwrap();
+    
+    tray.add_menu_item("📂 폴더 열기", || {
+        open::that(&config.local_path).unwrap();
+    }).unwrap();
+    
+    tray.add_menu_item("🌐 웹에서 열기", || {
+        open::that(format!("https://mdflare.com/{}", config.username)).unwrap();
+    }).unwrap();
+    
+    tray.inner_mut().add_separator().unwrap();
+    
+    tray.add_menu_item("종료", || {
+        std::process::exit(0);
+    }).unwrap();
+    
+    // 메시지 루프
+    loop {
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
 }
 ```
 
-## 💾 로컬 설정 파일
+## 🔄 동기화 엔진
 
-macOS: `~/.mdflare/config.json`
-Windows 권장: `%APPDATA%\MDFlare\config.json`
+```rust
+struct SyncEngine {
+    api: ApiClient,
+    local_path: PathBuf,
+    local_hashes: HashMap<String, String>,
+}
 
-```json
-{
-  "apiBase": "https://mdflare.com",
-  "username": "user123",
-  "localPath": "C:\\Users\\Username\\Documents\\MDFlare",
-  "apiToken": "agent_abc123..."
+impl SyncEngine {
+    fn full_sync(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        // 1. 서버 파일 목록
+        let remote_files = self.api.list_files()?;
+        let remote_paths = self.flatten_files(&remote_files);
+        
+        // 2. 로컬 파일 목록
+        let local_paths = self.scan_local_md_files();
+        
+        // 3. 서버 → 로컬 (다운로드)
+        for path in &remote_paths {
+            let local_file = self.local_path.join(path);
+            if !local_file.exists() {
+                let content = self.api.get_file(path)?;
+                std::fs::create_dir_all(local_file.parent().unwrap())?;
+                std::fs::write(&local_file, &content.content)?;
+                println!("⬇️ {}", path);
+            }
+        }
+        
+        // 4. 로컬 → 서버 (업로드)
+        for path in &local_paths {
+            if !remote_paths.contains(path) {
+                let content = std::fs::read_to_string(self.local_path.join(path))?;
+                self.api.put_file(path, &content)?;
+                println!("⬆️ {}", path);
+            }
+        }
+        
+        Ok(())
+    }
+    
+    fn simple_hash(s: &str) -> String {
+        let mut hash: i32 = 0;
+        for c in s.chars() {
+            hash = ((hash << 5).wrapping_sub(hash)).wrapping_add(c as i32);
+        }
+        format!("{:x}", hash)
+    }
 }
 ```
-
-## 🔄 동기화 로직
-
-### 기본 원칙
-1. **R2가 절대저장소** — 충돌 시 서버 우선 (또는 타임스탬프 비교)
-2. **양방향 동기화** — 로컬 변경 → 서버, 서버 변경 → 로컬
-3. **마크다운만** — `.md` 파일만 동기화
-
-### 동기화 주기
-- **파일 감시:** 로컬 파일 변경 시 즉시 업로드 (1초 debounce)
-- **풀 동기화:** 30초마다 전체 파일 목록 비교
-
-### 파일 감시 (Windows)
-- `FileSystemWatcher` 클래스 사용 (.NET)
-- 또는 `ReadDirectoryChangesW` API (Win32)
-
-### 동기화 흐름
-```
-1. 서버에서 파일 목록 가져오기
-2. 로컬 파일 목록 스캔
-3. 서버에만 있는 파일 → 다운로드
-4. 로컬에만 있는 파일 → 업로드
-5. 양쪽에 있는 파일 → 해시 비교 후 필요시 동기화
-```
-
-### 간단한 해시 함수 (내용 비교용)
-```javascript
-function simpleHash(str) {
-  let hash = 0;
-  for (let i = 0; i < str.length; i++) {
-    const char = str.charCodeAt(i);
-    hash = ((hash << 5) - hash) + char;
-    hash |= 0;
-  }
-  return hash.toString(36);
-}
-```
-
-## 🖥️ UI 요구사항
-
-### 시스템 트레이 앱
-- 트레이 아이콘: 🔥 또는 커스텀 아이콘
-- 상태 표시: "동기화 중...", "대기 중 · 15개 파일", "오류" 등
-
-### 트레이 메뉴
-```
-👤 {username}
-📁 {동기화 폴더 경로}
-─────────────────
-🔄 지금 동기화
-📂 폴더 열기
-🌐 웹에서 열기
-─────────────────
-⚙️ 설정
-종료
-```
-
-### 초기 설정 화면 (미설정 시)
-```
-🔐 브라우저로 로그인    ← 메인 버튼 (브라우저 열기)
-⚙️ 수동 설정           ← 토큰 직접 입력 옵션
-```
-
-### 로그인 성공 후
-```
-🎉 로그인 성공!
-사용자: {username}
-
-동기화 폴더를 선택하세요.
-[폴더 선택] [기본 폴더 사용] [취소]
-```
-
-## 🛠️ 기술 스택 권장
-
-### 옵션 1: C# / .NET (권장)
-- WPF 또는 WinForms
-- `System.IO.FileSystemWatcher`
-- `HttpClient`
-- 단일 exe 배포 가능
-
-### 옵션 2: Rust + Tauri
-- 크로스플랫폼 가능
-- 작은 바이너리
-
-### 옵션 3: Electron
-- 웹 기술 재사용
-- 용량 큼 (비추)
 
 ## 📋 구현 체크리스트
 
-- [ ] 시스템 트레이 앱 기본 구조
-- [ ] 설정 파일 읽기/쓰기
-- [ ] `mdflare://` URL scheme 등록
-- [ ] 브라우저 OAuth 로그인 (URL scheme 콜백 수신)
-- [ ] API 클라이언트 (GET/PUT/DELETE)
-- [ ] 파일 목록 조회 + 파싱
-- [ ] 로컬 파일 스캔
-- [ ] 파일 다운로드/업로드
-- [ ] FileSystemWatcher로 로컬 변경 감지
-- [ ] 30초 주기 풀 동기화
-- [ ] 에러 핸들링 + 재시도
-- [ ] 로그 기록
-
-## 📎 참고: macOS 에이전트 코드
-
-`~/work/web/mdflare/agent/MDFlareAgent/Sources/main.swift` 참고
-
-주요 클래스:
-- `ConfigManager` — 설정 파일 관리
-- `APIClient` — REST API 호출
-- `FileWatcher` — FSEvents 파일 감시
-- `SyncEngine` — 동기화 로직
-- `AppDelegate` — 메뉴바 UI + URL scheme 핸들링
+- [ ] Cargo 프로젝트 초기화
+- [ ] Config 구조체 + 읽기/쓰기
+- [ ] `mdflare://` URL scheme 레지스트리 등록
+- [ ] 커맨드라인에서 OAuth 콜백 파싱
+- [ ] 브라우저 열기 (`open` crate)
+- [ ] API 클라이언트 (reqwest)
+- [ ] 시스템 트레이 (tray-item)
+- [ ] 파일 감시 (notify)
+- [ ] 동기화 엔진
+- [ ] 30초 주기 풀 동기화 (스레드/타이머)
+- [ ] 에러 핸들링
+- [ ] 로깅
 
 ## 🚀 빌드 & 배포
 
-### 배포 파일
-- `MDFlare-Agent-{version}-win.zip`
-- 내부: `MDFlare Agent.exe` + 필요한 DLL
+### 빌드
+```bash
+# Windows에서
+cargo build --release
 
-### 다운로드 페이지 업데이트
-`~/work/web/mdflare/web/src/pages/Download.jsx`에 Windows 다운로드 링크 추가
+# 크로스 컴파일 (macOS/Linux에서 Windows 빌드)
+cargo build --release --target x86_64-pc-windows-gnu
+```
 
-### 호스팅
-Firebase Storage 사용:
+### 결과물
+`target/release/mdflare-agent.exe` (~3-5MB)
+
+### 배포
+Firebase Storage에 업로드:
 - 버킷: `markdownflare.firebasestorage.app`
 - 경로: `downloads/win/MDFlare-Agent-{version}-win.zip`
 
-## ❓ 질문 있으면
+## 📎 참고 코드
 
-macOS 에이전트 코드(`main.swift`)를 참고하면 거의 모든 로직이 있음.
-API는 웹에서 직접 테스트 가능: https://mdflare.com/{username}
+macOS Swift 에이전트 (로직 동일):
+`~/work/web/mdflare/agent/MDFlareAgent/Sources/main.swift`
 
 ---
 
 *작성: 2026-02-06*
-*MDFlare Agent v1.0.3 기준*
+*Rust Edition 2021 기준*
