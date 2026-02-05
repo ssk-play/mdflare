@@ -467,21 +467,22 @@ function ContextMenu({ x, y, type, path, name, onNewFile, onNewFolder, onRename,
   );
 }
 
-// 롱프레스 훅 (모바일 터치 + 데스크탑 우클릭 모두 지원)
+// 롱프레스 훅 (모바일 터치 + 데스크탑 클릭/우클릭 모두 지원)
 function useLongPress(onLongPress, onClick, ms = 500) {
   const timerRef = useRef(null);
   const movedRef = useRef(false);
   const triggeredRef = useRef(false);
+  const touchFiredRef = useRef(false);
 
   const start = useCallback((e) => {
     movedRef.current = false;
     triggeredRef.current = false;
+    touchFiredRef.current = true;
     const touch = e.touches?.[0];
     const x = touch?.clientX ?? e.clientX;
     const y = touch?.clientY ?? e.clientY;
     timerRef.current = setTimeout(() => {
       triggeredRef.current = true;
-      // 진동 피드백 (지원 시)
       if (navigator.vibrate) navigator.vibrate(30);
       onLongPress({ clientX: x, clientY: y, preventDefault: () => {}, stopPropagation: () => {} });
     }, ms);
@@ -499,12 +500,21 @@ function useLongPress(onLongPress, onClick, ms = 500) {
       return;
     }
     if (!movedRef.current && onClick) onClick(e);
+    // 터치 후 브라우저가 click도 발생시키므로 잠시 플래그 유지
+    setTimeout(() => { touchFiredRef.current = false; }, 300);
+  }, [onClick]);
+
+  // 데스크탑 클릭 핸들러 (터치 직후 발생하는 synthetic click은 무시)
+  const handleClick = useCallback((e) => {
+    if (touchFiredRef.current) return;
+    if (onClick) onClick(e);
   }, [onClick]);
 
   return {
     onTouchStart: start,
     onTouchMove: move,
     onTouchEnd: end,
+    onClick: handleClick,
     onContextMenu: (e) => { e.preventDefault(); e.stopPropagation(); onLongPress(e); },
   };
 }
