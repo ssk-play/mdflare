@@ -768,7 +768,7 @@ body {
     width: 100%;
     max-height: 0;
     overflow: hidden;
-    transition: max-height 0.3s ease;
+    transition: max-height 0.3s ease-out;
     border-right: none;
     border-bottom: 1px solid #30363d;
   }

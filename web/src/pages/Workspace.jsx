@@ -441,17 +441,35 @@ export default function Workspace({ user }) {
             <button className="sample-btn" onClick={handleGenerateSamples} disabled={sidebarLoading}>🎲 샘플</button>
           </div>
           <div className="sidebar-handle"
-            onClick={() => setSidebarOpen(false)}
             onTouchStart={(e) => {
               const t = e.touches[0];
-              e.currentTarget._swipe = { startY: t.clientY };
+              const sidebar = e.currentTarget.closest('.sidebar');
+              const startH = sidebar.offsetHeight;
+              sidebar._drag = { startY: t.clientY, startH, dragging: false };
+              sidebar.style.transition = 'none';
+            }}
+            onTouchMove={(e) => {
+              const sidebar = e.currentTarget.closest('.sidebar');
+              const d = sidebar._drag;
+              if (!d) return;
+              d.dragging = true;
+              const dy = e.touches[0].clientY - d.startY;
+              const newH = Math.max(0, d.startH + dy);
+              sidebar.style.maxHeight = newH + 'px';
             }}
             onTouchEnd={(e) => {
-              const sw = e.currentTarget._swipe;
-              if (!sw) return;
-              const dy = e.changedTouches[0].clientY - sw.startY;
-              if (dy < -30) setSidebarOpen(false);
-              e.currentTarget._swipe = null;
+              const sidebar = e.currentTarget.closest('.sidebar');
+              const d = sidebar._drag;
+              sidebar.style.transition = '';
+              sidebar.style.maxHeight = '';
+              if (!d) return;
+              if (d.dragging) {
+                const finalH = d.startH + (e.changedTouches[0].clientY - d.startY);
+                if (finalH < d.startH * 0.5) setSidebarOpen(false);
+              } else {
+                setSidebarOpen(false);
+              }
+              sidebar._drag = null;
             }}>
             <div className="sidebar-handle-bar" />
           </div>
