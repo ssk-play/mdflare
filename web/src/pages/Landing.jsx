@@ -77,6 +77,7 @@ export default function Landing({ user, username }) {
 
       <footer className="landing-footer">
         <p>© 2026 MDFlare · Built with Cloudflare</p>
+        <p style={{ marginTop: 4, fontSize: 11, color: '#30363d' }}>v{__BUILD_VERSION__} · {__BUILD_TIME__}</p>
       </footer>
     </div>
   );
