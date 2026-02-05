@@ -154,7 +154,6 @@ export default function Workspace({ user }) {
   // 파일 열기 (URL 변경)
   const openFile = useCallback((fp) => {
     navigate(`/${userId}/${fp}`);
-    setSidebarOpen(false);
   }, [userId, navigate]);
 
   // 자동 저장
