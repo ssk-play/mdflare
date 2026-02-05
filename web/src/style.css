@@ -18,6 +18,141 @@ body {
   flex-direction: column;
 }
 
+/* Light Mode */
+body.light-mode {
+  background: #ffffff;
+  color: #24292f;
+}
+
+body.light-mode .header {
+  background: #f6f8fa;
+  border-color: #d0d7de;
+}
+
+body.light-mode .header h1 { color: #cf222e; }
+
+body.light-mode .sidebar {
+  background: #f6f8fa;
+  border-color: #d0d7de;
+}
+
+body.light-mode .sidebar-header {
+  border-color: #d0d7de;
+  color: #57606a;
+}
+
+body.light-mode .tree-item {
+  color: #24292f;
+}
+
+body.light-mode .tree-item:hover {
+  background: #eaeef2;
+}
+
+body.light-mode .tree-item.active {
+  background: #ddf4ff;
+  color: #0969da;
+}
+
+body.light-mode .tree-folder.focused {
+  background: #ddf4ff;
+  color: #0969da;
+  border-right-color: #0969da;
+}
+
+body.light-mode .tree-folder.drag-over {
+  background: #dafbe1;
+  outline-color: #1a7f37;
+}
+
+body.light-mode .editor-toolbar {
+  background: #f6f8fa;
+  border-color: #d0d7de;
+}
+
+body.light-mode .editor-stats {
+  background: #ffffff;
+  border-color: #eaeef2;
+}
+
+body.light-mode .tab-btn {
+  border-color: #d0d7de;
+  color: #57606a;
+}
+
+body.light-mode .tab-btn.active {
+  background: #0969da;
+  color: #fff;
+  border-color: #0969da;
+}
+
+body.light-mode .preview {
+  background: #ffffff;
+  border-color: #d0d7de;
+}
+
+body.light-mode .preview h1,
+body.light-mode .preview h2,
+body.light-mode .preview h3 { color: #24292f; }
+body.light-mode .preview p,
+body.light-mode .preview li { color: #24292f; }
+body.light-mode .preview code { background: #eaeef2; }
+body.light-mode .preview pre { background: #f6f8fa; }
+
+body.light-mode .context-menu {
+  background: #ffffff;
+  border-color: #d0d7de;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+}
+
+body.light-mode .context-item {
+  color: #24292f;
+}
+
+body.light-mode .context-item:hover {
+  background: #ddf4ff;
+}
+
+body.light-mode .context-divider {
+  background: #d0d7de;
+}
+
+body.light-mode .search-input {
+  background: #ffffff;
+  border-color: #d0d7de;
+  color: #24292f;
+}
+
+body.light-mode .sidebar-footer {
+  border-color: #d0d7de;
+  color: #57606a;
+}
+
+body.light-mode .sidebar-collapsed {
+  color: #57606a;
+}
+
+body.light-mode .toast-loading {
+  background: rgba(9, 105, 218, 0.1);
+  border-color: rgba(9, 105, 218, 0.3);
+  color: #24292f;
+}
+
+body.light-mode .toast-success {
+  background: rgba(26, 127, 55, 0.1);
+  border-color: rgba(26, 127, 55, 0.3);
+  color: #24292f;
+}
+
+body.light-mode .toast-error {
+  background: rgba(207, 34, 46, 0.1);
+  border-color: rgba(207, 34, 46, 0.3);
+  color: #24292f;
+}
+
+body.light-mode .empty-state { color: #8c959f; }
+body.light-mode .recent-item:hover { background: #eaeef2; color: #0969da; }
+
 /* Header */
 .header {
   display: flex;

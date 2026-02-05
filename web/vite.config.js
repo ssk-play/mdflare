@@ -5,7 +5,7 @@ export default defineConfig({
   define: {
     __BUILD_TIME__: JSON.stringify(new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })),
     __BUILD_VERSION__: JSON.stringify(process.env.npm_package_version || '0.1.0'),
-    __LAST_CHANGE__: JSON.stringify('최근 파일 목록 (localStorage, 최대 10개)'),
+    __LAST_CHANGE__: JSON.stringify('다크/라이트 테마 토글 ☀️🌙'),
   },
   plugins: [react()],
   server: {

@@ -32,6 +32,16 @@ const darkTheme = EditorView.theme({
   '.cm-activeLine': { backgroundColor: '#1f6feb11' },
 }, { dark: true });
 
+const lightTheme = EditorView.theme({
+  '&': { backgroundColor: '#ffffff', color: '#24292f' },
+  '.cm-content': { caretColor: '#0969da' },
+  '.cm-cursor': { borderLeftColor: '#0969da' },
+  '&.cm-focused .cm-selectionBackground, .cm-selectionBackground': { backgroundColor: '#0969da22' },
+  '.cm-gutters': { backgroundColor: '#f6f8fa', color: '#8c959f', border: 'none' },
+  '.cm-activeLineGutter': { backgroundColor: '#0969da11' },
+  '.cm-activeLine': { backgroundColor: '#0969da08' },
+}, { dark: false });
+
 // 토스트 알림 컴포넌트
 function Toast({ toasts, onRemove }) {
   return (
@@ -66,6 +76,7 @@ export default function Workspace({ user }) {
   const [dragOver, setDragOver] = useState(null);
   const [dragSrc, setDragSrc] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [lightMode, setLightMode] = useState(() => localStorage.getItem('mdflare-theme') === 'light');
   const [recentFiles, setRecentFiles] = useState(() => {
     try { return JSON.parse(localStorage.getItem('mdflare-recent') || '[]'); } catch { return []; }
   });
@@ -467,6 +478,12 @@ export default function Workspace({ user }) {
     }
   };
 
+  // 테마 적용
+  useEffect(() => {
+    document.body.classList.toggle('light-mode', lightMode);
+    localStorage.setItem('mdflare-theme', lightMode ? 'light' : 'dark');
+  }, [lightMode]);
+
   // 키보드 단축키
   useEffect(() => {
     const handler = (e) => {
@@ -590,6 +607,7 @@ export default function Workspace({ user }) {
                     <button className={`tab-btn ${view === 'split' ? 'active' : ''}`} onClick={() => setView('split')}>Split</button>
                     <button className={`tab-btn ${view === 'preview' ? 'active' : ''}`} onClick={() => setView('preview')}>Preview</button>
                   </div>
+                  <button className="tab-btn" onClick={() => setLightMode(!lightMode)} title="테마 전환">{lightMode ? '🌙' : '☀️'}</button>
                   <button className="tab-btn" onClick={() => {
                     if (document.fullscreenElement) {
                       document.exitFullscreen();
@@ -624,7 +642,7 @@ export default function Workspace({ user }) {
               <div className="editor-content">
                 {(view === 'edit' || view === 'split') && (
                   <CodeMirror value={content} onChange={handleChange}
-                    extensions={[markdown(), darkTheme, EditorView.lineWrapping]}
+                    extensions={[markdown(), lightMode ? lightTheme : darkTheme, EditorView.lineWrapping]}
                     theme="none" style={{ flex: 1, overflow: 'auto' }} />
                 )}
                 {(view === 'preview' || view === 'split') && (
