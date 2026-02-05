@@ -1,22 +1,33 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { loginWithGoogle } from '../firebase';
 
-export default function Landing({ user }) {
+export default function Landing({ user, username }) {
   const navigate = useNavigate();
 
   const handleLogin = async () => {
     try {
       const result = await loginWithGoogle();
-      const uid = result.user.uid.substring(0, 8);
-      navigate(`/${uid}`);
+      // 로그인 후 username 존재 여부 확인
+      const res = await fetch(`/api/username/resolve?uid=${result.user.uid}`);
+      const data = await res.json();
+      if (data.found) {
+        navigate(`/${data.username}`);
+      } else {
+        navigate('/setup');
+      }
     } catch (err) {
       console.error('Login failed:', err);
     }
   };
 
-  if (user) {
-    navigate(`/${user.uid.substring(0, 8)}`);
+  useEffect(() => {
+    if (user && username) {
+      navigate(`/${username}`);
+    }
+  }, [user, username, navigate]);
+
+  if (user && username) {
     return null;
   }
 
@@ -24,7 +35,10 @@ export default function Landing({ user }) {
     <div className="landing">
       <nav className="landing-nav">
         <h1>🔥 MDFlare</h1>
-        <button className="login-btn" onClick={handleLogin}>로그인</button>
+        <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+          <button className="nav-link" onClick={() => navigate('/download')}>다운로드</button>
+          <button className="login-btn" onClick={handleLogin}>로그인</button>
+        </div>
       </nav>
 
       <div className="hero">

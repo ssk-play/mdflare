@@ -1,7 +1,7 @@
 // POST /api/:userId/rename — 이름 변경
 export async function onRequestPost(context) {
-  const { params, env, request } = context;
-  const userId = params.userId;
+  const { params, env, request, data } = context;
+  const userId = data.resolvedUid || params.userId;
   const body = await request.json();
   const { oldPath, newPath } = body;
 

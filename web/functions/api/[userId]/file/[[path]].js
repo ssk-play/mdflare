@@ -2,8 +2,8 @@
 // PUT /api/:userId/file/:path — 파일 저장
 // DELETE /api/:userId/file/:path — 파일 삭제
 export async function onRequest(context) {
-  const { request, params, env } = context;
-  const userId = params.userId;
+  const { request, params, env, data } = context;
+  const userId = data.resolvedUid || params.userId;
   const filePath = params.path.join('/');
   const r2Key = `${userId}/${filePath}`;
 

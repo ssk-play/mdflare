@@ -5,10 +5,19 @@ import { markdown } from '@codemirror/lang-markdown';
 import { EditorView } from '@codemirror/view';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { updateFileMeta, onFilesChanged, simpleHash, logout } from '../firebase';
+import { updateFileMeta, onFilesChanged, simpleHash, logout, auth } from '../firebase';
 
 const API = '/api';
 const AUTO_SAVE_DELAY = 1000;
+
+// 인증 헤더 생성 헬퍼
+function authHeaders() {
+  const headers = { 'Content-Type': 'application/json' };
+  if (auth.currentUser) {
+    headers['X-Firebase-UID'] = auth.currentUser.uid;
+  }
+  return headers;
+}
 
 const darkTheme = EditorView.theme({
   '&': { backgroundColor: '#0d1117', color: '#e6edf3' },
@@ -47,7 +56,7 @@ export default function Workspace({ user }) {
   // URL 경로에서 파일 열기
   useEffect(() => {
     if (filePath) {
-      const fp = filePath.endsWith('.md') ? filePath : `${filePath}.md`;
+      const fp = filePath;
       fetch(`${API}/${userId}/file/${fp}`)
         .then(r => r.json())
         .then(data => {
@@ -96,8 +105,7 @@ export default function Workspace({ user }) {
 
   // 파일 열기 (URL 변경)
   const openFile = useCallback((fp) => {
-    const cleanPath = fp.replace(/\.md$/, '');
-    navigate(`/${userId}/${cleanPath}`);
+    navigate(`/${userId}/${fp}`);
   }, [userId, navigate]);
 
   // 자동 저장
@@ -106,7 +114,7 @@ export default function Workspace({ user }) {
     try {
       const res = await fetch(`${API}/${userId}/file/${fp}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: authHeaders(),
         body: JSON.stringify({ content: newContent })
       });
       const data = await res.json();
@@ -149,7 +157,7 @@ export default function Workspace({ user }) {
     try {
       await fetch(`${API}/${userId}/file/${fp}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: authHeaders(),
         body: JSON.stringify({ content: `# ${name.replace('.md', '')}\n\n` })
       });
       loadFiles();
@@ -164,7 +172,7 @@ export default function Workspace({ user }) {
     try {
       await fetch(`${API}/${userId}/file/${fp}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: authHeaders(),
         body: JSON.stringify({ content: '' })
       });
       loadFiles();
@@ -180,7 +188,7 @@ export default function Workspace({ user }) {
     try {
       await fetch(`${API}/${userId}/rename`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: authHeaders(),
         body: JSON.stringify({ oldPath, newPath })
       });
       loadFiles();
@@ -191,7 +199,7 @@ export default function Workspace({ user }) {
   const handleDelete = async (fp, name) => {
     if (!confirm(`"${name}" 삭제할까요?`)) return;
     try {
-      await fetch(`${API}/${userId}/file/${fp}`, { method: 'DELETE' });
+      await fetch(`${API}/${userId}/file/${fp}`, { method: 'DELETE', headers: authHeaders() });
       loadFiles();
       if (currentFile?.path === fp) navigate(`/${userId}`);
     } catch (err) { console.error('Failed to delete:', err); }
@@ -205,7 +213,7 @@ export default function Workspace({ user }) {
       const newPath = ext > 0 ? `${fp.slice(0, ext)} (copy).md` : `${fp} (copy)`;
       await fetch(`${API}/${userId}/file/${newPath}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: authHeaders(),
         body: JSON.stringify({ content: data.content })
       });
       loadFiles();
@@ -223,6 +231,27 @@ export default function Workspace({ user }) {
     navigate('/');
   };
 
+  // API 토큰 발급
+  const handleGenerateToken = async () => {
+    if (!user) return;
+    if (!confirm('API 토큰을 생성하시겠습니까?\n기존 토큰은 무효화됩니다.')) return;
+    try {
+      const res = await fetch('/api/token/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ uid: user.uid, username: userId })
+      });
+      const data = await res.json();
+      if (data.token) {
+        prompt('API 토큰이 생성되었습니다.\n에이전트 앱에 입력하세요:', data.token);
+      } else {
+        alert('토큰 생성 실패: ' + (data.error || '알 수 없는 오류'));
+      }
+    } catch (err) {
+      alert('토큰 생성 실패');
+    }
+  };
+
   const statusText = { idle: '', editing: '✏️', saving: '저장 중...', saved: '✓ 저장됨', error: '⚠️ 저장 실패' };
   const statusClass = { idle: '', editing: 'unsaved', saving: 'saving', saved: 'saved', error: 'error' };
 
@@ -232,6 +261,7 @@ export default function Workspace({ user }) {
         <h1 onClick={() => navigate(`/${userId}`)} style={{ cursor: 'pointer' }}>🔥 MDFlare</h1>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <span className="user-badge">👤 {user?.displayName || userId}</span>
+          <button className="logout-btn" onClick={handleGenerateToken}>🔑 API 토큰</button>
           <button className="logout-btn" onClick={handleLogout}>로그아웃</button>
         </div>
       </header>

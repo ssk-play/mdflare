@@ -3,13 +3,14 @@ import { getDatabase, ref, set, onValue } from 'firebase/database';
 import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from 'firebase/auth';
 
 const firebaseConfig = {
-  apiKey: "AIzaSyA1TtZCiI_lDs-qiYY5raUAQFNdMFcRn3g",
-  authDomain: "copy-and-paste-online.firebaseapp.com",
-  databaseURL: "https://copy-and-paste-online-default-rtdb.firebaseio.com",
-  projectId: "copy-and-paste-online",
-  storageBucket: "copy-and-paste-online.firebasestorage.app",
-  messagingSenderId: "338015118159",
-  appId: "1:338015118159:web:359ace8d480271bc215b3a"
+  apiKey: "AIzaSyBfif2L4Cz11AYTP_OEsJZQJrNWe06a6CY",
+  authDomain: "markdownflare.firebaseapp.com",
+  databaseURL: "https://markdownflare-default-rtdb.firebaseio.com",
+  projectId: "markdownflare",
+  storageBucket: "markdownflare.firebasestorage.app",
+  messagingSenderId: "658985431247",
+  appId: "1:658985431247:web:07966fe83f40b1a7de07ba",
+  measurementId: "G-VNWSZDGXV8"
 };
 
 const app = initializeApp(firebaseConfig);
