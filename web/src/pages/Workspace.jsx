@@ -654,7 +654,9 @@ function FileItem({ item, currentPath, onSelect, onContextMenu, onDragMove, dept
       draggable
       onDragStart={(e) => { e.dataTransfer.setData('text/plain', item.path); e.dataTransfer.effectAllowed = 'move'; }}
       {...longPressHandlers}>
-      <span className="icon">📄</span>{item.name}
+      <span className="icon">📄</span>
+      <span className="tree-item-name">{item.name}</span>
+      <button className="tree-item-menu" onClick={(e) => { e.stopPropagation(); onContextMenu(e, 'file', item.path, item.name); }}>⋮</button>
     </div>
   );
 }
@@ -680,7 +682,9 @@ function FolderItem({ item, currentPath, onSelect, onContextMenu, focusedFolder,
         onDragLeave={() => onDragOver(null)}
         onDrop={(e) => { e.preventDefault(); const src = e.dataTransfer.getData('text/plain'); onDragOver(null); if (src && onDragMove) onDragMove(src, item.path); }}
         {...longPressHandlers}>
-        <span className="icon">{open ? '📂' : '📁'}</span>{item.name}
+        <span className="icon">{open ? '📂' : '📁'}</span>
+        <span className="tree-item-name">{item.name}</span>
+        <button className="tree-item-menu" onClick={(e) => { e.stopPropagation(); onContextMenu(e, 'folder', item.path, item.name); }}>⋮</button>
       </div>
       {open && (
         <div style={{ paddingLeft: 0 }}>
