@@ -561,6 +561,16 @@ export default function Workspace({ user }) {
                       addToast('📋 클립보드에 복사됨', 'success', 2000);
                     } catch { addToast('📋 복사 실패', 'error', 2000); }
                   }} title="전체 내용 복사">📋</button>
+                  <button className="tab-btn" onClick={() => {
+                    const blob = new Blob([content], { type: 'text/markdown' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = currentFile.path.split('/').pop();
+                    a.click();
+                    URL.revokeObjectURL(url);
+                    addToast('💾 다운로드 시작', 'success', 2000);
+                  }} title="파일 다운로드">💾</button>
                   <span className={`save-status ${statusClass[saveStatus]}`}>{statusText[saveStatus]}</span>
                 </div>
               </div>
