@@ -95,6 +95,15 @@ body {
   color: #58a6ff;
 }
 
+.sidebar-footer {
+  padding: 8px 16px;
+  font-size: 10px;
+  color: #30363d;
+  border-top: 1px solid #30363d;
+  text-align: center;
+  flex-shrink: 0;
+}
+
 .file-tree {
   flex: 1;
   overflow-y: auto;

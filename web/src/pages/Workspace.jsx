@@ -291,6 +291,7 @@ export default function Workspace({ user }) {
           }}>
             <FileTree items={files} currentPath={currentFile?.path} onSelect={openFile} onContextMenu={showContextMenu} />
           </div>
+          <div className="sidebar-footer">v{__BUILD_VERSION__} · {__BUILD_TIME__}</div>
         </aside>
 
         <div className="editor-area">
