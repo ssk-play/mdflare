@@ -437,7 +437,7 @@ export default function Workspace({ user }) {
             <FileTree items={files} currentPath={currentFile?.path} onSelect={openFile} onContextMenu={showContextMenu} focusedFolder={focusedFolder} onFocusFolder={setFocusedFolder} onNewFile={handleNewFile} />
           </div>
           <div className="sidebar-footer">
-            <span title={__BUILD_COMMIT_MSG__}>v{__BUILD_VERSION__} · {__BUILD_COMMIT_MSG__}</span>
+            <span title={__LAST_CHANGE__}>v{__BUILD_VERSION__} · {__LAST_CHANGE__}</span>
             <button className="sample-btn" onClick={handleGenerateSamples} disabled={sidebarLoading}>🎲 샘플</button>
           </div>
           <div className="sidebar-handle"
