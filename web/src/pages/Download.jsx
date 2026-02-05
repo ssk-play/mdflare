@@ -27,13 +27,13 @@ export default function Download() {
           <h3>macOS</h3>
           <p>Apple Silicon & Intel 지원</p>
           <a
-            href="https://firebasestorage.googleapis.com/v0/b/markdownflare.firebasestorage.app/o/downloads%2Fmac%2FMDFlare-Agent-1.0.0-mac.zip?alt=media&token=92cd3b2f-c12b-490e-9706-b9eed863f9d6"
+            href="https://firebasestorage.googleapis.com/v0/b/markdownflare.firebasestorage.app/o/downloads%2Fmac%2FMDFlare-Agent-1.0.1-mac.zip?alt=media&token=9e05960d-34e1-4ee5-8220-4a71f51d243e"
             className="cta-btn"
             style={{ textDecoration: 'none', display: 'inline-block' }}
           >
-            다운로드 (84KB)
+            다운로드 (88K)
           </a>
-          <span className="download-note">Swift 네이티브 · 메뉴바 앱 · v1.0.0</span>
+          <span className="download-note">Swift 네이티브 · 메뉴바 앱 · v1.0.1</span>
         </div>
 
         <div className="download-card">
