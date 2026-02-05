@@ -5,7 +5,7 @@ export default defineConfig({
   define: {
     __BUILD_TIME__: JSON.stringify(new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })),
     __BUILD_VERSION__: JSON.stringify(process.env.npm_package_version || '0.1.0'),
-    __LAST_CHANGE__: JSON.stringify('API 토큰 클립보드 자동복사 + 눈에 띄는 알림'),
+    __LAST_CHANGE__: JSON.stringify('에이전트 브라우저 OAuth 로그인 페이지 추가'),
   },
   plugins: [react()],
   server: {

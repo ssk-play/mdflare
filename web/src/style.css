@@ -153,6 +153,123 @@ body.light-mode .toast-error {
 body.light-mode .empty-state { color: #8c959f; }
 body.light-mode .recent-item:hover { background: #eaeef2; color: #0969da; }
 
+/* Agent Auth */
+.agent-auth {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #0d1117 0%, #161b22 100%);
+  padding: 20px;
+}
+
+.agent-auth-card {
+  background: #21262d;
+  border: 1px solid #30363d;
+  border-radius: 12px;
+  padding: 40px;
+  max-width: 400px;
+  width: 100%;
+  text-align: center;
+}
+
+.agent-auth-card .logo {
+  font-size: 48px;
+  margin-bottom: 16px;
+}
+
+.agent-auth-card h1 {
+  font-size: 20px;
+  color: #e6edf3;
+  margin-bottom: 24px;
+}
+
+.agent-auth-card p {
+  color: #8b949e;
+  margin-bottom: 20px;
+  line-height: 1.5;
+}
+
+.agent-auth-card .status {
+  color: #58a6ff;
+}
+
+.agent-auth-card .status.success {
+  color: #3fb950;
+}
+
+.agent-auth-card .user-info {
+  color: #e6edf3;
+  font-weight: 500;
+}
+
+.auth-btn {
+  display: inline-block;
+  padding: 12px 24px;
+  background: #21262d;
+  border: 1px solid #30363d;
+  color: #e6edf3;
+  font-size: 16px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s;
+  margin-bottom: 16px;
+}
+
+.auth-btn:hover {
+  background: #30363d;
+  border-color: #484f58;
+}
+
+.auth-btn.primary {
+  background: #238636;
+  border-color: #238636;
+}
+
+.auth-btn.primary:hover {
+  background: #2ea043;
+}
+
+.agent-auth-card .hint {
+  font-size: 13px;
+  color: #6e7681;
+}
+
+.agent-auth-card .error-box {
+  background: rgba(248, 81, 73, 0.1);
+  border: 1px solid rgba(248, 81, 73, 0.4);
+  border-radius: 8px;
+  padding: 16px;
+}
+
+.agent-auth-card .error-box p {
+  color: #f85149;
+  margin-bottom: 12px;
+}
+
+.agent-auth-card .download-link {
+  color: #58a6ff;
+  text-decoration: none;
+}
+
+.agent-auth-card .download-link:hover {
+  text-decoration: underline;
+}
+
+.agent-auth-card .retry-btn {
+  padding: 8px 16px;
+  background: transparent;
+  border: 1px solid #30363d;
+  color: #8b949e;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.agent-auth-card .retry-btn:hover {
+  border-color: #484f58;
+  color: #e6edf3;
+}
+
 /* Header */
 .header {
   display: flex;

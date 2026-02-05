@@ -5,6 +5,7 @@ import Landing from './pages/Landing';
 import Workspace from './pages/Workspace';
 import SetUsername from './pages/SetUsername';
 import Download from './pages/Download';
+import AgentAuth from './pages/AgentAuth';
 
 export default function App() {
   const [user, setUser] = useState(null);
@@ -48,6 +49,7 @@ export default function App() {
     <Routes>
       <Route path="/" element={<Landing user={user} username={username} />} />
       <Route path="/download" element={<Download />} />
+      <Route path="/auth/agent" element={<AgentAuth />} />
       <Route path="/setup" element={
         user && !username ? <SetUsername user={user} /> : <Landing user={user} username={username} />
       } />

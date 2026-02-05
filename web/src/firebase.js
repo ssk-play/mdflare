@@ -66,4 +66,4 @@ export function onAuthChange(callback) {
   return onAuthStateChanged(auth, callback);
 }
 
-export { db, auth };
+export { db, auth, googleProvider };
