@@ -607,6 +607,15 @@ export default function Workspace({ user }) {
                     <button className={`tab-btn ${view === 'split' ? 'active' : ''}`} onClick={() => setView('split')}>Split</button>
                     <button className={`tab-btn ${view === 'preview' ? 'active' : ''}`} onClick={() => setView('preview')}>Preview</button>
                   </div>
+                  <button className="tab-btn" onClick={async () => {
+                    const shareUrl = `${window.location.origin}/${userId}/${currentFile.path}`;
+                    try {
+                      await navigator.clipboard.writeText(shareUrl);
+                      addToast(`🔗 공유 링크 복사됨`, 'success', 2000);
+                    } catch {
+                      prompt('공유 링크:', shareUrl);
+                    }
+                  }} title="공유 링크 복사">🔗</button>
                   <button className="tab-btn" onClick={() => setLightMode(!lightMode)} title="테마 전환">{lightMode ? '🌙' : '☀️'}</button>
                   <button className="tab-btn" onClick={() => {
                     if (document.fullscreenElement) {
