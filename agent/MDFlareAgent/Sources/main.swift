@@ -301,6 +301,19 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         
+        // mdflare:// URL scheme 등록
+        NSAppleEventManager.shared().setEventHandler(
+            self,
+            andSelector: #selector(handleURLEvent(_:withReplyEvent:)),
+            forEventClass: AEEventClass(kInternetEventClass),
+            andEventID: AEEventID(kAEGetURL)
+        )
+        
+        // URL scheme을 시스템에 등록 (앱 번들로 실행될 때만)
+        if let bundleId = Bundle.main.bundleIdentifier {
+            LSSetDefaultHandlerForURLScheme("mdflare" as CFString, bundleId as CFString)
+        }
+        
         let config = ConfigManager.shared.load()
         
         syncEngine.onStatusChange = { [weak self] status in
@@ -323,6 +336,73 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
     
+    // mdflare://callback?uid=xxx&username=xxx&token=xxx 처리
+    @objc func handleURLEvent(_ event: NSAppleEventDescriptor, withReplyEvent reply: NSAppleEventDescriptor) {
+        guard let urlString = event.paramDescriptor(forKeyword: AEKeyword(keyDirectObject))?.stringValue,
+              let url = URL(string: urlString),
+              url.host == "callback" else { return }
+        
+        let components = URLComponents(url: url, resolvingAgainstBaseURL: false)
+        let params = Dictionary(uniqueKeysWithValues: (components?.queryItems ?? []).map { ($0.name, $0.value ?? "") })
+        
+        guard let username = params["username"], !username.isEmpty,
+              let token = params["token"], !token.isEmpty else {
+            showAlert(title: "로그인 실패", message: "잘못된 인증 정보입니다.")
+            return
+        }
+        
+        // 기존 폴더가 있으면 유지, 없으면 기본값
+        let existingConfig = ConfigManager.shared.load()
+        let folderPath = existingConfig.localPath.isEmpty 
+            ? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Documents/MDFlare").path
+            : existingConfig.localPath
+        
+        // 폴더가 없으면 생성
+        try? FileManager.default.createDirectory(atPath: folderPath, withIntermediateDirectories: true)
+        
+        // 폴더 선택 다이얼로그
+        DispatchQueue.main.async { [weak self] in
+            self?.showFolderSelectAfterLogin(username: username, token: token, defaultFolder: folderPath)
+        }
+    }
+    
+    private func showFolderSelectAfterLogin(username: String, token: String, defaultFolder: String) {
+        let alert = NSAlert()
+        alert.messageText = "🎉 로그인 성공!"
+        alert.informativeText = "사용자: \(username)\n\n동기화할 폴더를 선택하세요."
+        alert.addButton(withTitle: "폴더 선택")
+        alert.addButton(withTitle: "기본 폴더 사용")
+        alert.addButton(withTitle: "취소")
+        
+        let response = alert.runModal()
+        
+        var folderPath = defaultFolder
+        if response == .alertFirstButtonReturn {
+            let panel = NSOpenPanel()
+            panel.canChooseDirectories = true
+            panel.canChooseFiles = false
+            panel.canCreateDirectories = true
+            panel.message = "동기화할 마크다운 폴더를 선택하세요"
+            panel.directoryURL = URL(fileURLWithPath: defaultFolder)
+            
+            if panel.runModal() == .OK, let url = panel.url {
+                folderPath = url.path
+            }
+        } else if response == .alertThirdButtonReturn {
+            return // 취소
+        }
+        
+        saveConfig(username: username, token: token, folderPath: folderPath)
+        showAlert(title: "설정 완료!", message: "동기화 폴더: \(shortenPath(folderPath))\n\n동기화가 시작됩니다.")
+    }
+    
+    private func showAlert(title: String, message: String) {
+        let alert = NSAlert()
+        alert.messageText = title
+        alert.informativeText = message
+        alert.runModal()
+    }
+    
     func updateMenu(configured: Bool) {
         let menu = NSMenu()
         
@@ -337,7 +417,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             menu.addItem(NSMenuItem.separator())
             menu.addItem(NSMenuItem(title: "⚙️ 설정 초기화", action: #selector(resetConfig), keyEquivalent: ""))
         } else {
-            menu.addItem(NSMenuItem(title: "⚙️ 초기 설정", action: #selector(showSetup), keyEquivalent: ""))
+            menu.addItem(NSMenuItem(title: "🔐 브라우저로 로그인", action: #selector(loginWithBrowser), keyEquivalent: ""))
+            menu.addItem(NSMenuItem(title: "⚙️ 수동 설정", action: #selector(showSetup), keyEquivalent: ""))
         }
         
         menu.addItem(NSMenuItem.separator())
@@ -364,6 +445,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let config = ConfigManager.shared.load()
         if let url = URL(string: "\(config.apiBase)/\(config.username)") {
             NSWorkspace.shared.open(url)
+        }
+    }
+    
+    @objc func loginWithBrowser() {
+        if let url = URL(string: "https://mdflare.com/auth/agent") {
+            NSWorkspace.shared.open(url)
+            statusItem.button?.title = " 브라우저 확인..."
         }
     }
     
