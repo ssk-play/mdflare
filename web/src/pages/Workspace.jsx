@@ -41,6 +41,7 @@ export default function Workspace({ user }) {
   const [view, setView] = useState('edit');
   const [saveStatus, setSaveStatus] = useState('idle');
   const [contextMenu, setContextMenu] = useState(null);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const saveTimer = useRef(null);
 
   // 파일 트리 로드
@@ -106,6 +107,7 @@ export default function Workspace({ user }) {
   // 파일 열기 (URL 변경)
   const openFile = useCallback((fp) => {
     navigate(`/${userId}/${fp}`);
+    setSidebarOpen(false);
   }, [userId, navigate]);
 
   // 자동 저장
@@ -258,7 +260,12 @@ export default function Workspace({ user }) {
   return (
     <>
       <header className="header">
-        <h1 onClick={() => navigate(`/${userId}`)} style={{ cursor: 'pointer' }}>🔥 MDFlare</h1>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <button className="sidebar-toggle" onClick={() => setSidebarOpen(!sidebarOpen)}>
+            {sidebarOpen ? '✕' : '☰'}
+          </button>
+          <h1 onClick={() => navigate(`/${userId}`)} style={{ cursor: 'pointer' }}>🔥 MDFlare</h1>
+        </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <span className="user-badge">👤 {user?.displayName || userId}</span>
           <button className="logout-btn" onClick={handleGenerateToken}>🔑 API 토큰</button>
@@ -267,7 +274,7 @@ export default function Workspace({ user }) {
       </header>
 
       <div className="main">
-        <aside className="sidebar">
+        <aside className={`sidebar ${sidebarOpen ? 'open' : ''}`}>
           <div className="sidebar-header" onContextMenu={(e) => showContextMenu(e, 'root', '', 'root')}>
             📁 Files
           </div>

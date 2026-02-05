@@ -547,3 +547,187 @@ body {
   color: #8b949e;
   line-height: 1.6;
 }
+
+/* ══════════════════════════════════════
+   Mobile Responsive
+   ══════════════════════════════════════ */
+
+/* 모바일 사이드바 토글 버튼 */
+.sidebar-toggle {
+  display: none;
+  padding: 4px 8px;
+  background: transparent;
+  border: 1px solid #30363d;
+  border-radius: 6px;
+  color: #8b949e;
+  cursor: pointer;
+  font-size: 16px;
+}
+
+@media (max-width: 768px) {
+  /* Body 스크롤 허용 */
+  body {
+    overflow: auto;
+  }
+
+  /* 랜딩 페이지 */
+  .landing-nav {
+    padding: 12px 16px;
+  }
+
+  .hero {
+    padding: 40px 20px 30px;
+  }
+
+  .hero h2 {
+    font-size: 28px;
+  }
+
+  .hero-sub {
+    font-size: 15px;
+  }
+
+  .cta-btn {
+    padding: 12px 24px;
+    font-size: 14px;
+    width: 100%;
+  }
+
+  .features {
+    grid-template-columns: 1fr;
+    padding: 24px 16px 40px;
+    gap: 16px;
+  }
+
+  .feature-card {
+    padding: 16px;
+  }
+
+  /* 다운로드 페이지 */
+  .download-cards {
+    grid-template-columns: 1fr;
+    padding: 0 16px 40px;
+  }
+
+  .how-it-works {
+    padding: 24px 16px 40px;
+  }
+
+  .how-it-works h2 {
+    font-size: 22px;
+  }
+
+  .steps {
+    grid-template-columns: 1fr;
+    gap: 24px;
+  }
+
+  /* 헤더 */
+  .header {
+    padding: 8px 12px;
+  }
+
+  .header h1 {
+    font-size: 14px;
+  }
+
+  .header .user-badge {
+    display: none;
+  }
+
+  .logout-btn {
+    font-size: 11px;
+    padding: 3px 8px;
+  }
+
+  /* 사이드바 토글 */
+  .sidebar-toggle {
+    display: block;
+  }
+
+  /* 메인 레이아웃: 세로 스택 */
+  .main {
+    flex-direction: column;
+  }
+
+  /* 사이드바: 기본 숨김, 토글로 표시 */
+  .sidebar {
+    width: 100%;
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.3s ease;
+    border-right: none;
+    border-bottom: 1px solid #30363d;
+  }
+
+  .sidebar.open {
+    max-height: 50vh;
+    overflow-y: auto;
+  }
+
+  .sidebar-header {
+    padding: 10px 16px;
+  }
+
+  .tree-item {
+    padding: 10px 16px;
+    font-size: 15px;
+  }
+
+  /* 에디터 */
+  .editor-toolbar {
+    padding: 6px 12px;
+    flex-wrap: wrap;
+    height: auto;
+    gap: 6px;
+  }
+
+  .editor-toolbar .file-path {
+    font-size: 12px;
+    width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .tab-btn {
+    padding: 4px 10px;
+    font-size: 11px;
+  }
+
+  .editor-content {
+    flex-direction: column;
+  }
+
+  .cm-editor .cm-content {
+    padding: 12px;
+  }
+
+  .cm-editor {
+    font-size: 14px;
+  }
+
+  .preview {
+    padding: 16px;
+    border-left: none;
+    border-top: 1px solid #30363d;
+  }
+
+  .preview h1 { font-size: 22px; }
+  .preview h2 { font-size: 18px; }
+  .preview h3 { font-size: 16px; }
+
+  /* 컨텍스트 메뉴 */
+  .context-menu {
+    min-width: 200px;
+  }
+
+  .context-item {
+    padding: 12px 16px;
+    font-size: 15px;
+  }
+
+  /* SetUsername */
+  .hero input {
+    font-size: 16px !important; /* iOS 줌 방지 */
+  }
+}
