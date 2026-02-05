@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { useParams, useNavigate, useLocation } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import CodeMirror from '@uiw/react-codemirror';
 import { markdown } from '@codemirror/lang-markdown';
 import { EditorView } from '@codemirror/view';
@@ -51,7 +51,6 @@ function Toast({ toasts, onRemove }) {
 export default function Workspace({ user }) {
   const { userId, '*': filePath } = useParams();
   const navigate = useNavigate();
-  const location = useLocation();
 
   const [files, setFiles] = useState([]);
   const [currentFile, setCurrentFile] = useState(null);

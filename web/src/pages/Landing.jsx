@@ -69,6 +69,16 @@ export default function Landing({ user, username }) {
           <p>브라우저에서 바로 편집, 자동 저장</p>
         </div>
         <div className="feature-card">
+          <span className="feature-icon">🖱️</span>
+          <h3>드래그 & 드롭</h3>
+          <p>파일을 끌어서 폴더로 이동, 직관적 정리</p>
+        </div>
+        <div className="feature-card">
+          <span className="feature-icon">📱</span>
+          <h3>모바일 지원</h3>
+          <p>어디서든 스마트폰으로 편집 가능</p>
+        </div>
+        <div className="feature-card">
           <span className="feature-icon">🔒</span>
           <h3>내 파일은 내 소유</h3>
           <p>원본은 항상 내 컴퓨터에</p>

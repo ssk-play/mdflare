@@ -5,7 +5,7 @@ export default defineConfig({
   define: {
     __BUILD_TIME__: JSON.stringify(new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })),
     __BUILD_VERSION__: JSON.stringify(process.env.npm_package_version || '0.1.0'),
-    __LAST_CHANGE__: JSON.stringify('자기 폴더 드롭 시 이동 차단 + 버블링 방지'),
+    __LAST_CHANGE__: JSON.stringify('코드정리 + 랜딩페이지 기능카드 추가 + README 업데이트'),
   },
   plugins: [react()],
   server: {
