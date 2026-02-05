@@ -414,21 +414,7 @@ export default function Workspace({ user }) {
       </header>
 
       <div className="main">
-        <aside className={`sidebar ${sidebarOpen ? 'open' : ''}`}
-          onTouchStart={(e) => {
-            const t = e.touches[0];
-            e.currentTarget._swipe = { startX: t.clientX, startY: t.clientY };
-          }}
-          onTouchEnd={(e) => {
-            const sw = e.currentTarget._swipe;
-            if (!sw) return;
-            const t = e.changedTouches[0];
-            const dx = t.clientX - sw.startX;
-            const dy = t.clientY - sw.startY;
-            // 위로 50px 이상 또는 왼쪽으로 80px 이상 스와이프
-            if (dy < -50 || dx < -80) setSidebarOpen(false);
-            e.currentTarget._swipe = null;
-          }}>
+        <aside className={`sidebar ${sidebarOpen ? 'open' : ''}`}>
           <div className="sidebar-header" onContextMenu={(e) => { e.preventDefault(); showContextMenu(e, 'root', '', 'root'); }}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 2, flex: 1, minWidth: 0 }}>
               <span>📁 Files {sidebarLoading && <span className="sidebar-spinner">⟳</span>}</span>
