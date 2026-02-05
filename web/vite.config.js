@@ -5,7 +5,7 @@ export default defineConfig({
   define: {
     __BUILD_TIME__: JSON.stringify(new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })),
     __BUILD_VERSION__: JSON.stringify(process.env.npm_package_version || '0.1.0'),
-    __LAST_CHANGE__: JSON.stringify('테이블📊 + 이미지🖼️ 삽입 도우미 버튼'),
+    __LAST_CHANGE__: JSON.stringify('저장 상태 표시 제거'),
   },
   plugins: [react()],
   server: {
