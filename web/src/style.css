@@ -216,6 +216,12 @@ body {
   border-right: 2px solid #58a6ff;
 }
 
+.tree-folder.drag-over {
+  background: #3fb95022;
+  outline: 2px dashed #3fb950;
+  outline-offset: -2px;
+}
+
 .tree-folder-children {
   padding-left: 16px;
 }

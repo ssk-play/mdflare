@@ -64,6 +64,9 @@ export default function Workspace({ user }) {
   const [toasts, setToasts] = useState([]);
   const [sidebarLoading, setSidebarLoading] = useState(false);
   const [focusedFolder, setFocusedFolder] = useState('');
+  const [clipboard, setClipboard] = useState(null); // { path, name, type }
+  const [dragItem, setDragItem] = useState(null);
+  const [dragOver, setDragOver] = useState(null);
   const saveTimer = useRef(null);
   const toastId = useRef(0);
 
@@ -264,6 +267,35 @@ export default function Workspace({ user }) {
     }
   };
 
+  // 파일/폴더 이동
+  const handleMove = async (sourcePath, targetFolder) => {
+    const name = sourcePath.split('/').pop();
+    const newPath = targetFolder ? `${targetFolder}/${name}` : name;
+    if (sourcePath === newPath) return;
+    if (newPath.startsWith(sourcePath + '/')) {
+      addToast('❌ 자기 자신의 하위로 이동할 수 없습니다', 'error', 3000);
+      return;
+    }
+    const tid = addToast(`📦 "${name}" 이동 중...`, 'loading');
+    setSidebarLoading(true);
+    try {
+      await fetch(`${API}/${userId}/rename`, {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({ oldPath: sourcePath, newPath })
+      });
+      await loadFiles();
+      updateToast(tid, `📦 "${name}" 이동 완료!`, 'success');
+      if (currentFile?.path === sourcePath) openFile(newPath);
+    } catch (err) {
+      console.error('Failed to move:', err);
+      updateToast(tid, `📦 이동 실패`, 'error');
+    } finally {
+      setSidebarLoading(false);
+      setClipboard(null);
+    }
+  };
+
   const handleNewFolder = async (parentPath) => {
     const name = prompt('새 폴더 이름');
     if (!name) return;
@@ -438,8 +470,10 @@ export default function Workspace({ user }) {
             e.preventDefault();
             if (e.target.closest('.tree-item')) return;
             showContextMenu(e, 'root', '', 'root');
-          }}>
-            <FileTree items={files} currentPath={currentFile?.path} onSelect={openFile} onContextMenu={showContextMenu} focusedFolder={focusedFolder} onFocusFolder={setFocusedFolder} onNewFile={handleNewFile} />
+          }}
+            onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; }}
+            onDrop={(e) => { e.preventDefault(); const src = e.dataTransfer.getData('text/plain'); if (src) handleMove(src, ''); }}>
+            <FileTree items={files} currentPath={currentFile?.path} onSelect={openFile} onContextMenu={showContextMenu} focusedFolder={focusedFolder} onFocusFolder={setFocusedFolder} onNewFile={handleNewFile} onDragMove={handleMove} dragOver={dragOver} onDragOver={setDragOver} />
           </div>
           <div className="sidebar-footer">
             <span title={__LAST_CHANGE__}>v{__BUILD_VERSION__} · {__LAST_CHANGE__}</span>
@@ -503,7 +537,11 @@ export default function Workspace({ user }) {
         <ContextMenu {...contextMenu}
           onNewFile={handleNewFile} onNewFolder={handleNewFolder}
           onRename={handleRename} onDelete={handleDelete}
-          onDuplicate={handleDuplicate} onClose={() => setContextMenu(null)} />
+          onDuplicate={handleDuplicate}
+          clipboard={clipboard}
+          onCut={(path, name, type) => { setClipboard({ path, name, type }); }}
+          onPaste={(targetFolder) => { if (clipboard) handleMove(clipboard.path, targetFolder); }}
+          onClose={() => setContextMenu(null)} />
       )}
 
       <Toast toasts={toasts} onRemove={removeToast} />
@@ -511,7 +549,7 @@ export default function Workspace({ user }) {
   );
 }
 
-function ContextMenu({ x, y, type, path, name, onNewFile, onNewFolder, onRename, onDelete, onDuplicate, onClose }) {
+function ContextMenu({ x, y, type, path, name, onNewFile, onNewFolder, onRename, onDelete, onDuplicate, clipboard, onCut, onPaste, onClose }) {
   const menuRef = useRef(null);
   useEffect(() => {
     if (menuRef.current) {
@@ -530,12 +568,21 @@ function ContextMenu({ x, y, type, path, name, onNewFile, onNewFolder, onRename,
       {type !== 'root' && (
         <>
           <div className="context-divider" />
+          <div className="context-item" onClick={() => { onCut(path, name, type); onClose(); }}>✂️ 잘라내기</div>
           <div className="context-item" onClick={() => { onRename(path, type); onClose(); }}>✏️ 이름 변경</div>
           {type === 'file' && (
             <div className="context-item" onClick={() => { onDuplicate(path); onClose(); }}>📋 복제</div>
           )}
           <div className="context-divider" />
           <div className="context-item danger" onClick={() => { onDelete(path, name, type); onClose(); }}>🗑️ 삭제</div>
+        </>
+      )}
+      {clipboard && (
+        <>
+          <div className="context-divider" />
+          <div className="context-item" onClick={() => { onPaste(folderPath); onClose(); }}>
+            📋 여기에 붙여넣기 <span style={{ color: '#8b949e', fontSize: 11 }}>({clipboard.name})</span>
+          </div>
         </>
       )}
     </div>
@@ -594,19 +641,19 @@ function useLongPress(onLongPress, onClick, ms = 500) {
   };
 }
 
-function FileTree({ items, currentPath, onSelect, onContextMenu, focusedFolder, onFocusFolder, onNewFile, depth = 0 }) {
+function FileTree({ items, currentPath, onSelect, onContextMenu, focusedFolder, onFocusFolder, onNewFile, onDragMove, dragOver, onDragOver, depth = 0 }) {
   return items.map((item) => (
     <div key={item.path}>
       {item.type === 'folder' ? (
-        <FolderItem item={item} currentPath={currentPath} onSelect={onSelect} onContextMenu={onContextMenu} focusedFolder={focusedFolder} onFocusFolder={onFocusFolder} onNewFile={onNewFile} depth={depth} />
+        <FolderItem item={item} currentPath={currentPath} onSelect={onSelect} onContextMenu={onContextMenu} focusedFolder={focusedFolder} onFocusFolder={onFocusFolder} onNewFile={onNewFile} onDragMove={onDragMove} dragOver={dragOver} onDragOver={onDragOver} depth={depth} />
       ) : (
-        <FileItem item={item} currentPath={currentPath} onSelect={onSelect} onContextMenu={onContextMenu} depth={depth} />
+        <FileItem item={item} currentPath={currentPath} onSelect={onSelect} onContextMenu={onContextMenu} onDragMove={onDragMove} depth={depth} />
       )}
     </div>
   ));
 }
 
-function FileItem({ item, currentPath, onSelect, onContextMenu, depth }) {
+function FileItem({ item, currentPath, onSelect, onContextMenu, onDragMove, depth }) {
   const longPressHandlers = useLongPress(
     (e) => onContextMenu(e, 'file', item.path, item.name),
     () => onSelect(item.path),
@@ -614,16 +661,18 @@ function FileItem({ item, currentPath, onSelect, onContextMenu, depth }) {
   return (
     <div className={`tree-item ${item.path === currentPath ? 'active' : ''}`}
       style={{ paddingLeft: 16 + depth * 16 }}
+      draggable
+      onDragStart={(e) => { e.dataTransfer.setData('text/plain', item.path); e.dataTransfer.effectAllowed = 'move'; }}
       {...longPressHandlers}>
       <span className="icon">📄</span>{item.name}
     </div>
   );
 }
 
-function FolderItem({ item, currentPath, onSelect, onContextMenu, focusedFolder, onFocusFolder, onNewFile, depth }) {
+function FolderItem({ item, currentPath, onSelect, onContextMenu, focusedFolder, onFocusFolder, onNewFile, onDragMove, dragOver, onDragOver, depth }) {
   const [open, setOpen] = useState(true);
   const isFocused = focusedFolder === item.path;
-  // .gitkeep만 있는 폴더는 빈 폴더로 취급
+  const isDragOver = dragOver === item.path;
   const visibleChildren = item.children?.filter(c => c.name !== '.gitkeep') || [];
   const isEmpty = visibleChildren.length === 0;
   const longPressHandlers = useLongPress(
@@ -635,7 +684,11 @@ function FolderItem({ item, currentPath, onSelect, onContextMenu, focusedFolder,
   );
   return (
     <>
-      <div className={`tree-item tree-folder ${isFocused ? 'focused' : ''}`} style={{ paddingLeft: 16 + depth * 16 }}
+      <div className={`tree-item tree-folder ${isFocused ? 'focused' : ''} ${isDragOver ? 'drag-over' : ''}`}
+        style={{ paddingLeft: 16 + depth * 16 }}
+        onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; onDragOver(item.path); }}
+        onDragLeave={() => onDragOver(null)}
+        onDrop={(e) => { e.preventDefault(); const src = e.dataTransfer.getData('text/plain'); onDragOver(null); if (src && onDragMove) onDragMove(src, item.path); }}
         {...longPressHandlers}>
         <span className="icon">{open ? '📂' : '📁'}</span>{item.name}
       </div>
@@ -648,7 +701,7 @@ function FolderItem({ item, currentPath, onSelect, onContextMenu, focusedFolder,
               </button>
             </div>
           ) : (
-            <FileTree items={visibleChildren} currentPath={currentPath} onSelect={onSelect} onContextMenu={onContextMenu} focusedFolder={focusedFolder} onFocusFolder={onFocusFolder} onNewFile={onNewFile} depth={depth + 1} />
+            <FileTree items={visibleChildren} currentPath={currentPath} onSelect={onSelect} onContextMenu={onContextMenu} focusedFolder={focusedFolder} onFocusFolder={onFocusFolder} onNewFile={onNewFile} onDragMove={onDragMove} dragOver={dragOver} onDragOver={onDragOver} depth={depth + 1} />
           )}
         </div>
       )}
