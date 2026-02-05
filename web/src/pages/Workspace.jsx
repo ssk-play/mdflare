@@ -442,32 +442,40 @@ export default function Workspace({ user }) {
           </div>
           <div className="sidebar-handle"
             onTouchStart={(e) => {
-              const t = e.touches[0];
               const sidebar = e.currentTarget.closest('.sidebar');
-              const startH = sidebar.offsetHeight;
-              sidebar._drag = { startY: t.clientY, startH, dragging: false };
+              sidebar._drag = { startY: e.touches[0].clientY, dragged: false };
               sidebar.style.transition = 'none';
+              sidebar.style.willChange = 'transform';
             }}
             onTouchMove={(e) => {
               const sidebar = e.currentTarget.closest('.sidebar');
               const d = sidebar._drag;
               if (!d) return;
-              d.dragging = true;
               const dy = e.touches[0].clientY - d.startY;
-              const newH = Math.max(0, d.startH + dy);
-              sidebar.style.maxHeight = newH + 'px';
+              if (dy < 0) {
+                d.dragged = true;
+                sidebar.style.transform = `translateY(${dy}px)`;
+              }
             }}
             onTouchEnd={(e) => {
               const sidebar = e.currentTarget.closest('.sidebar');
               const d = sidebar._drag;
-              sidebar.style.transition = '';
-              sidebar.style.maxHeight = '';
+              sidebar.style.willChange = '';
               if (!d) return;
-              if (d.dragging) {
-                const finalH = d.startH + (e.changedTouches[0].clientY - d.startY);
-                if (finalH < d.startH * 0.5) setSidebarOpen(false);
+              const dy = e.changedTouches[0].clientY - d.startY;
+              if (d.dragged && dy < -60) {
+                sidebar.style.transition = 'transform 0.2s ease-out';
+                sidebar.style.transform = 'translateY(-100%)';
+                setTimeout(() => {
+                  setSidebarOpen(false);
+                  sidebar.style.transition = '';
+                  sidebar.style.transform = '';
+                }, 200);
               } else {
-                setSidebarOpen(false);
+                sidebar.style.transition = 'transform 0.15s ease-out';
+                sidebar.style.transform = '';
+                setTimeout(() => { sidebar.style.transition = ''; }, 150);
+                if (!d.dragged) setSidebarOpen(false);
               }
               sidebar._drag = null;
             }}>
