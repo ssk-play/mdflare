@@ -478,6 +478,18 @@ export default function Workspace({ user }) {
     }
   };
 
+  // 저장 안 된 변경사항 경고 (브라우저 닫기/새로고침)
+  useEffect(() => {
+    const handler = (e) => {
+      if (content !== savedContent) {
+        e.preventDefault();
+        e.returnValue = '';
+      }
+    };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [content, savedContent]);
+
   // 테마 적용
   useEffect(() => {
     document.body.classList.toggle('light-mode', lightMode);

@@ -5,7 +5,7 @@ export default defineConfig({
   define: {
     __BUILD_TIME__: JSON.stringify(new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })),
     __BUILD_VERSION__: JSON.stringify(process.env.npm_package_version || '0.1.0'),
-    __LAST_CHANGE__: JSON.stringify('.md 파일 드래그앤드롭 업로드'),
+    __LAST_CHANGE__: JSON.stringify('미저장 변경사항 경고 + 파일 업로드'),
   },
   plugins: [react()],
   server: {
