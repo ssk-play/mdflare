@@ -97,10 +97,15 @@ export default function Workspace({ user }) {
 
   useEffect(() => { loadFiles(); }, [loadFiles]);
 
-  // URL 경로에서 파일 열기
+  // URL 경로에서 파일 열기 (전환 시 즉시 클리어 후 로딩)
   useEffect(() => {
     if (filePath) {
       const fp = decodeURIComponent(filePath);
+      // 즉시 기존 내용 클리어
+      setContent('');
+      setSavedContent('');
+      setCurrentFile({ path: fp, loading: true });
+      setSaveStatus('idle');
       fetch(`${API}/${userId}/file/${encodePath(fp)}`)
         .then(r => r.json())
         .then(data => {
@@ -108,7 +113,6 @@ export default function Workspace({ user }) {
             setCurrentFile(data);
             setContent(data.content);
             setSavedContent(data.content);
-            setSaveStatus('idle');
           }
         })
         .catch(() => {});
