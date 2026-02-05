@@ -64,8 +64,6 @@ export default function Workspace({ user }) {
   const [toasts, setToasts] = useState([]);
   const [sidebarLoading, setSidebarLoading] = useState(false);
   const [focusedFolder, setFocusedFolder] = useState('');
-  const [clipboard, setClipboard] = useState(null); // { path, name, type }
-  const [dragItem, setDragItem] = useState(null);
   const [dragOver, setDragOver] = useState(null);
   const saveTimer = useRef(null);
   const toastId = useRef(0);
@@ -126,11 +124,15 @@ export default function Workspace({ user }) {
     }
   }, [filePath, userId]);
 
-  // 컨텍스트 메뉴 닫기
+  // 컨텍스트 메뉴 닫기 (클릭 또는 터치이동)
   useEffect(() => {
     const handler = () => setContextMenu(null);
     window.addEventListener('click', handler);
-    return () => window.removeEventListener('click', handler);
+    window.addEventListener('touchmove', handler, { passive: true });
+    return () => {
+      window.removeEventListener('click', handler);
+      window.removeEventListener('touchmove', handler);
+    };
   }, []);
 
   // Firebase 변경 감지
@@ -538,9 +540,6 @@ export default function Workspace({ user }) {
           onNewFile={handleNewFile} onNewFolder={handleNewFolder}
           onRename={handleRename} onDelete={handleDelete}
           onDuplicate={handleDuplicate}
-          clipboard={clipboard}
-          onCut={(path, name, type) => { setClipboard({ path, name, type }); }}
-          onPaste={(targetFolder) => { if (clipboard) handleMove(clipboard.path, targetFolder); }}
           onClose={() => setContextMenu(null)} />
       )}
 
@@ -549,7 +548,7 @@ export default function Workspace({ user }) {
   );
 }
 
-function ContextMenu({ x, y, type, path, name, onNewFile, onNewFolder, onRename, onDelete, onDuplicate, clipboard, onCut, onPaste, onClose }) {
+function ContextMenu({ x, y, type, path, name, onNewFile, onNewFolder, onRename, onDelete, onDuplicate, onClose }) {
   const menuRef = useRef(null);
   useEffect(() => {
     if (menuRef.current) {
@@ -568,21 +567,12 @@ function ContextMenu({ x, y, type, path, name, onNewFile, onNewFolder, onRename,
       {type !== 'root' && (
         <>
           <div className="context-divider" />
-          <div className="context-item" onClick={() => { onCut(path, name, type); onClose(); }}>✂️ 잘라내기</div>
           <div className="context-item" onClick={() => { onRename(path, type); onClose(); }}>✏️ 이름 변경</div>
           {type === 'file' && (
             <div className="context-item" onClick={() => { onDuplicate(path); onClose(); }}>📋 복제</div>
           )}
           <div className="context-divider" />
           <div className="context-item danger" onClick={() => { onDelete(path, name, type); onClose(); }}>🗑️ 삭제</div>
-        </>
-      )}
-      {clipboard && (
-        <>
-          <div className="context-divider" />
-          <div className="context-item" onClick={() => { onPaste(folderPath); onClose(); }}>
-            📋 여기에 붙여넣기 <span style={{ color: '#8b949e', fontSize: 11 }}>({clipboard.name})</span>
-          </div>
         </>
       )}
     </div>
