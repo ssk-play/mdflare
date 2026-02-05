@@ -663,9 +663,35 @@ export default function Workspace({ user }) {
             </>
             )
           ) : (
-            <div className="empty-state">
+            <div className="empty-state"
+              onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; }}
+              onDrop={async (e) => {
+                e.preventDefault();
+                const droppedFiles = [...e.dataTransfer.files].filter(f => f.name.endsWith('.md') || f.name.endsWith('.txt') || f.name.endsWith('.markdown'));
+                if (droppedFiles.length === 0) return;
+                const tid = addToast(`📤 ${droppedFiles.length}개 파일 업로드 중...`, 'loading');
+                setSidebarLoading(true);
+                try {
+                  for (const file of droppedFiles) {
+                    const text = await file.text();
+                    const targetFolder = focusedFolder || '';
+                    const fp = targetFolder ? `${targetFolder}/${file.name}` : file.name;
+                    await fetch(`${API}/${userId}/file/${encodePath(fp)}`, {
+                      method: 'PUT',
+                      headers: authHeaders(),
+                      body: JSON.stringify({ content: text })
+                    });
+                  }
+                  await loadFiles();
+                  updateToast(tid, `📤 ${droppedFiles.length}개 파일 업로드 완료!`, 'success');
+                } catch (err) {
+                  updateToast(tid, '📤 업로드 실패', 'error');
+                } finally {
+                  setSidebarLoading(false);
+                }
+              }}>
               <div className="logo">🔥</div>
-              <p>파일을 선택하세요</p>
+              <p>파일을 선택하거나 .md 파일을 여기에 드롭하세요</p>
               {recentFiles.length > 0 && (
                 <div className="recent-files">
                   <h4>최근 파일</h4>
