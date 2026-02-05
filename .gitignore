@@ -2,3 +2,4 @@
 node_modules
 .wrangler
 test-vault
+.DS_Store
