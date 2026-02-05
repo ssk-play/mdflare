@@ -10,6 +10,9 @@ import { updateFileMeta, onFilesChanged, simpleHash, logout, auth } from '../fir
 const API = '/api';
 const AUTO_SAVE_DELAY = 1000;
 
+// API 경로 인코딩 헬퍼 (한글 등 유니코드 지원, / 유지)
+const encodePath = (p) => p.split('/').map(s => encodeURIComponent(s)).join('/');
+
 // 인증 헤더 생성 헬퍼
 function authHeaders() {
   const headers = { 'Content-Type': 'application/json' };
@@ -57,8 +60,8 @@ export default function Workspace({ user }) {
   // URL 경로에서 파일 열기
   useEffect(() => {
     if (filePath) {
-      const fp = filePath;
-      fetch(`${API}/${userId}/file/${fp}`)
+      const fp = decodeURIComponent(filePath);
+      fetch(`${API}/${userId}/file/${encodePath(fp)}`)
         .then(r => r.json())
         .then(data => {
           if (!data.error) {
@@ -89,7 +92,7 @@ export default function Workspace({ user }) {
       if (currentFile) {
         const changed = changedFiles.find(f => f.path === currentFile.path);
         if (changed && changed.hash !== simpleHash(content)) {
-          fetch(`${API}/${userId}/file/${currentFile.path}`)
+          fetch(`${API}/${userId}/file/${encodePath(currentFile.path)}`)
             .then(r => r.json())
             .then(data => {
               setContent(data.content);
@@ -114,7 +117,7 @@ export default function Workspace({ user }) {
   const doSave = useCallback(async (fp, newContent) => {
     setSaveStatus('saving');
     try {
-      const res = await fetch(`${API}/${userId}/file/${fp}`, {
+      const res = await fetch(`${API}/${userId}/file/${encodePath(fp)}`, {
         method: 'PUT',
         headers: authHeaders(),
         body: JSON.stringify({ content: newContent })
@@ -157,7 +160,7 @@ export default function Workspace({ user }) {
     const fileName = name.endsWith('.md') ? name : `${name}.md`;
     const fp = folderPath ? `${folderPath}/${fileName}` : fileName;
     try {
-      await fetch(`${API}/${userId}/file/${fp}`, {
+      await fetch(`${API}/${userId}/file/${encodePath(fp)}`, {
         method: 'PUT',
         headers: authHeaders(),
         body: JSON.stringify({ content: `# ${name.replace('.md', '')}\n\n` })
@@ -172,7 +175,7 @@ export default function Workspace({ user }) {
     if (!name) return;
     const fp = parentPath ? `${parentPath}/${name}/.gitkeep` : `${name}/.gitkeep`;
     try {
-      await fetch(`${API}/${userId}/file/${fp}`, {
+      await fetch(`${API}/${userId}/file/${encodePath(fp)}`, {
         method: 'PUT',
         headers: authHeaders(),
         body: JSON.stringify({ content: '' })
@@ -201,7 +204,7 @@ export default function Workspace({ user }) {
   const handleDelete = async (fp, name) => {
     if (!confirm(`"${name}" 삭제할까요?`)) return;
     try {
-      await fetch(`${API}/${userId}/file/${fp}`, { method: 'DELETE', headers: authHeaders() });
+      await fetch(`${API}/${userId}/file/${encodePath(fp)}`, { method: 'DELETE', headers: authHeaders() });
       loadFiles();
       if (currentFile?.path === fp) navigate(`/${userId}`);
     } catch (err) { console.error('Failed to delete:', err); }
@@ -209,11 +212,11 @@ export default function Workspace({ user }) {
 
   const handleDuplicate = async (fp) => {
     try {
-      const res = await fetch(`${API}/${userId}/file/${fp}`);
+      const res = await fetch(`${API}/${userId}/file/${encodePath(fp)}`);
       const data = await res.json();
       const ext = fp.lastIndexOf('.md');
       const newPath = ext > 0 ? `${fp.slice(0, ext)} (copy).md` : `${fp} (copy)`;
-      await fetch(`${API}/${userId}/file/${newPath}`, {
+      await fetch(`${API}/${userId}/file/${encodePath(newPath)}`, {
         method: 'PUT',
         headers: authHeaders(),
         body: JSON.stringify({ content: data.content })
