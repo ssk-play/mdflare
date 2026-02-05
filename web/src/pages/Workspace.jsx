@@ -467,6 +467,12 @@ export default function Workspace({ user }) {
                     <button className={`tab-btn ${view === 'split' ? 'active' : ''}`} onClick={() => setView('split')}>Split</button>
                     <button className={`tab-btn ${view === 'preview' ? 'active' : ''}`} onClick={() => setView('preview')}>Preview</button>
                   </div>
+                  <button className="tab-btn" onClick={async () => {
+                    try {
+                      await navigator.clipboard.writeText(content);
+                      addToast('📋 클립보드에 복사됨', 'success', 2000);
+                    } catch { addToast('📋 복사 실패', 'error', 2000); }
+                  }} title="전체 내용 복사">📋</button>
                   <span className={`save-status ${statusClass[saveStatus]}`}>{statusText[saveStatus]}</span>
                 </div>
               </div>
