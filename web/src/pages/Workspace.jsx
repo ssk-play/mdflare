@@ -65,6 +65,7 @@ export default function Workspace({ user }) {
   const [sidebarLoading, setSidebarLoading] = useState(false);
   const [focusedFolder, setFocusedFolder] = useState('');
   const [dragOver, setDragOver] = useState(null);
+  const [dragSrc, setDragSrc] = useState(null);
   const saveTimer = useRef(null);
   const toastId = useRef(0);
 
@@ -478,7 +479,7 @@ export default function Workspace({ user }) {
           }}
             onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; }}
             onDrop={(e) => { e.preventDefault(); const src = e.dataTransfer.getData('text/plain'); if (src) handleMove(src, ''); }}>
-            <FileTree items={files} currentPath={currentFile?.path} onSelect={openFile} onContextMenu={showContextMenu} focusedFolder={focusedFolder} onFocusFolder={setFocusedFolder} onNewFile={handleNewFile} onDragMove={handleMove} dragOver={dragOver} onDragOver={setDragOver} />
+            <FileTree items={files} currentPath={currentFile?.path} onSelect={openFile} onContextMenu={showContextMenu} focusedFolder={focusedFolder} onFocusFolder={setFocusedFolder} onNewFile={handleNewFile} onDragMove={handleMove} dragOver={dragOver} onDragOver={setDragOver} dragSrc={dragSrc} onDragStart={setDragSrc} />
           </div>
           <div className="sidebar-footer">
             <span title={__LAST_CHANGE__}>v{__BUILD_VERSION__} · {__LAST_CHANGE__}</span>
@@ -634,19 +635,19 @@ function useLongPress(onLongPress, onClick, ms = 500) {
   };
 }
 
-function FileTree({ items, currentPath, onSelect, onContextMenu, focusedFolder, onFocusFolder, onNewFile, onDragMove, dragOver, onDragOver, depth = 0 }) {
+function FileTree({ items, currentPath, onSelect, onContextMenu, focusedFolder, onFocusFolder, onNewFile, onDragMove, dragOver, onDragOver, dragSrc, onDragStart, depth = 0 }) {
   return items.map((item) => (
     <div key={item.path}>
       {item.type === 'folder' ? (
-        <FolderItem item={item} currentPath={currentPath} onSelect={onSelect} onContextMenu={onContextMenu} focusedFolder={focusedFolder} onFocusFolder={onFocusFolder} onNewFile={onNewFile} onDragMove={onDragMove} dragOver={dragOver} onDragOver={onDragOver} depth={depth} />
+        <FolderItem item={item} currentPath={currentPath} onSelect={onSelect} onContextMenu={onContextMenu} focusedFolder={focusedFolder} onFocusFolder={onFocusFolder} onNewFile={onNewFile} onDragMove={onDragMove} dragOver={dragOver} onDragOver={onDragOver} dragSrc={dragSrc} onDragStart={onDragStart} depth={depth} />
       ) : (
-        <FileItem item={item} currentPath={currentPath} onSelect={onSelect} onContextMenu={onContextMenu} onDragMove={onDragMove} depth={depth} />
+        <FileItem item={item} currentPath={currentPath} onSelect={onSelect} onContextMenu={onContextMenu} onDragMove={onDragMove} onDragStart={onDragStart} depth={depth} />
       )}
     </div>
   ));
 }
 
-function FileItem({ item, currentPath, onSelect, onContextMenu, onDragMove, depth }) {
+function FileItem({ item, currentPath, onSelect, onContextMenu, onDragMove, onDragStart, depth }) {
   const longPressHandlers = useLongPress(
     (e) => onContextMenu(e, 'file', item.path, item.name),
     () => onSelect(item.path),
@@ -655,7 +656,8 @@ function FileItem({ item, currentPath, onSelect, onContextMenu, onDragMove, dept
     <div className={`tree-item ${item.path === currentPath ? 'active' : ''}`}
       style={{ paddingLeft: 16 + depth * 16 }}
       draggable
-      onDragStart={(e) => { e.dataTransfer.setData('text/plain', item.path); e.dataTransfer.effectAllowed = 'move'; }}
+      onDragStart={(e) => { e.dataTransfer.setData('text/plain', item.path); e.dataTransfer.effectAllowed = 'move'; onDragStart(item.path); }}
+      onDragEnd={() => onDragStart(null)}
       {...longPressHandlers}>
       <span className="icon">📄</span>
       <span className="tree-item-name">{item.name}</span>
@@ -664,10 +666,12 @@ function FileItem({ item, currentPath, onSelect, onContextMenu, onDragMove, dept
   );
 }
 
-function FolderItem({ item, currentPath, onSelect, onContextMenu, focusedFolder, onFocusFolder, onNewFile, onDragMove, dragOver, onDragOver, depth }) {
+function FolderItem({ item, currentPath, onSelect, onContextMenu, focusedFolder, onFocusFolder, onNewFile, onDragMove, dragOver, onDragOver, dragSrc, onDragStart, depth }) {
   const [open, setOpen] = useState(true);
   const isFocused = focusedFolder === item.path;
-  const isDragOver = dragOver === item.path;
+  const srcParent = dragSrc?.includes('/') ? dragSrc.substring(0, dragSrc.lastIndexOf('/')) : '';
+  const isSameFolder = dragSrc && srcParent === item.path;
+  const isDragOver = dragOver === item.path && !isSameFolder;
   const visibleChildren = item.children?.filter(c => c.name !== '.gitkeep') || [];
   const isEmpty = visibleChildren.length === 0;
   const longPressHandlers = useLongPress(
@@ -683,11 +687,9 @@ function FolderItem({ item, currentPath, onSelect, onContextMenu, focusedFolder,
         style={{ paddingLeft: 16 + depth * 16 }}
         onDragOver={(e) => {
           e.preventDefault();
-          const src = e.dataTransfer.types.includes('text/plain') ? true : false;
-          if (src) {
-            e.dataTransfer.dropEffect = 'move';
-            onDragOver(item.path);
-          }
+          if (isSameFolder) { e.dataTransfer.dropEffect = 'none'; return; }
+          e.dataTransfer.dropEffect = 'move';
+          onDragOver(item.path);
         }}
         onDragLeave={() => onDragOver(null)}
         onDrop={(e) => { e.preventDefault(); const src = e.dataTransfer.getData('text/plain'); onDragOver(null); if (src && onDragMove) onDragMove(src, item.path); }}
@@ -705,7 +707,7 @@ function FolderItem({ item, currentPath, onSelect, onContextMenu, focusedFolder,
               </button>
             </div>
           ) : (
-            <FileTree items={visibleChildren} currentPath={currentPath} onSelect={onSelect} onContextMenu={onContextMenu} focusedFolder={focusedFolder} onFocusFolder={onFocusFolder} onNewFile={onNewFile} onDragMove={onDragMove} dragOver={dragOver} onDragOver={onDragOver} depth={depth + 1} />
+            <FileTree items={visibleChildren} currentPath={currentPath} onSelect={onSelect} onContextMenu={onContextMenu} focusedFolder={focusedFolder} onFocusFolder={onFocusFolder} onNewFile={onNewFile} onDragMove={onDragMove} dragOver={dragOver} onDragOver={onDragOver} dragSrc={dragSrc} onDragStart={onDragStart} depth={depth + 1} />
           )}
         </div>
       )}
