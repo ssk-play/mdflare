@@ -3,7 +3,8 @@ export async function onRequestPost(context) {
   const { params, env, request, data } = context;
   const userId = data.resolvedUid || params.userId;
   const body = await request.json();
-  const { oldPath, newPath } = body;
+  const oldPath = decodeURIComponent(body.oldPath);
+  const newPath = decodeURIComponent(body.newPath);
 
   const oldKey = `${userId}/${oldPath}`;
   const newKey = `${userId}/${newPath}`;

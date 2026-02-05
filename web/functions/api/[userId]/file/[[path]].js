@@ -4,7 +4,7 @@
 export async function onRequest(context) {
   const { request, params, env, data } = context;
   const userId = data.resolvedUid || params.userId;
-  const filePath = params.path.join('/');
+  const filePath = decodeURIComponent(params.path.join('/'));
   const r2Key = `${userId}/${filePath}`;
 
   switch (request.method) {
