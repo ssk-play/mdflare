@@ -86,16 +86,25 @@ export default function Workspace({ user }) {
     setToasts(prev => prev.filter(t => t.id !== id));
   }, []);
 
+  // 파일 트리 정렬 (폴더 먼저, 이름순)
+  const sortFiles = useCallback((items) => {
+    return [...items].sort((a, b) => {
+      if (a.type === 'folder' && b.type !== 'folder') return -1;
+      if (a.type !== 'folder' && b.type === 'folder') return 1;
+      return a.name.localeCompare(b.name, 'ko');
+    }).map(item => item.children ? { ...item, children: sortFiles(item.children) } : item);
+  }, []);
+
   // 파일 트리 로드
   const loadFiles = useCallback(async () => {
     try {
       const r = await fetch(`${API}/${userId}/files`);
       const data = await r.json();
-      setFiles(data.files || []);
+      setFiles(sortFiles(data.files || []));
     } catch (err) {
       console.error('Failed to load files:', err);
     }
-  }, [userId]);
+  }, [userId, sortFiles]);
 
   useEffect(() => { loadFiles(); }, [loadFiles]);
 
@@ -573,6 +582,13 @@ export default function Workspace({ user }) {
                     <button className={`tab-btn ${view === 'split' ? 'active' : ''}`} onClick={() => setView('split')}>Split</button>
                     <button className={`tab-btn ${view === 'preview' ? 'active' : ''}`} onClick={() => setView('preview')}>Preview</button>
                   </div>
+                  <button className="tab-btn" onClick={() => {
+                    if (document.fullscreenElement) {
+                      document.exitFullscreen();
+                    } else {
+                      document.documentElement.requestFullscreen();
+                    }
+                  }} title="전체화면 토글">⛶</button>
                   <button className="tab-btn" onClick={async () => {
                     try {
                       await navigator.clipboard.writeText(content);
