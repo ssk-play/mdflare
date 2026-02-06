@@ -4,4 +4,5 @@ node_modules
 test-vault
 .DS_Store
 agent/target/
+web/dist/
 local-data/
