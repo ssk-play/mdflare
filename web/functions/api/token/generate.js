@@ -1,13 +1,34 @@
-// POST /api/token/generate — API 토큰 생성
+// POST /api/token/generate — API 토큰 생성 (인증 필요)
 // body: { uid, username }
+import { verifyFirebaseToken, extractToken } from '../lib/auth.js';
+
 export async function onRequestPost(context) {
   try {
     const { env, request } = context;
+    
+    // Firebase ID Token 검증
+    const idToken = extractToken(request);
+    if (!idToken) {
+      return Response.json({ error: 'Authentication required' }, { status: 401 });
+    }
+    
+    let decoded;
+    try {
+      decoded = await verifyFirebaseToken(idToken);
+    } catch (e) {
+      return Response.json({ error: 'Invalid token' }, { status: 401 });
+    }
+    
     const body = await request.json();
     const { uid, username } = body;
 
     if (!uid || !username) {
       return Response.json({ error: 'uid and username required' }, { status: 400 });
+    }
+    
+    // 본인 계정만 토큰 생성 가능
+    if (decoded.uid !== uid) {
+      return Response.json({ error: 'Cannot generate token for another user' }, { status: 403 });
     }
 
     if (!env.VAULT) {

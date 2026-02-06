@@ -13,11 +13,16 @@ const AUTO_SAVE_DELAY = 1000;
 // API 경로 인코딩 헬퍼 (한글 등 유니코드 지원, / 유지)
 const encodePath = (p) => p.split('/').map(s => encodeURIComponent(s)).join('/');
 
-// 인증 헤더 생성 헬퍼
-function authHeaders() {
+// 인증 헤더 생성 헬퍼 (비동기 - ID Token 사용)
+async function authHeaders() {
   const headers = { 'Content-Type': 'application/json' };
   if (auth.currentUser) {
-    headers['X-Firebase-UID'] = auth.currentUser.uid;
+    try {
+      const idToken = await auth.currentUser.getIdToken();
+      headers['Authorization'] = `Bearer ${idToken}`;
+    } catch (e) {
+      console.error('Failed to get ID token:', e);
+    }
   }
   return headers;
 }
@@ -112,7 +117,8 @@ export default function Workspace({ user }) {
   // 파일 트리 로드
   const loadFiles = useCallback(async () => {
     try {
-      const r = await fetch(`${API}/${userId}/files`);
+      const headers = await authHeaders();
+      const r = await fetch(`${API}/${userId}/files`, { headers });
       const data = await r.json();
       setFiles(sortFiles(data.files || []));
     } catch (err) {
@@ -131,16 +137,18 @@ export default function Workspace({ user }) {
       setSavedContent('');
       setCurrentFile({ path: fp, loading: true });
       setSaveStatus('idle');
-      fetch(`${API}/${userId}/file/${encodePath(fp)}`)
-        .then(r => r.json())
-        .then(data => {
+      (async () => {
+        try {
+          const headers = await authHeaders();
+          const r = await fetch(`${API}/${userId}/file/${encodePath(fp)}`, { headers });
+          const data = await r.json();
           if (!data.error) {
             setCurrentFile(data);
             setContent(data.content);
             setSavedContent(data.content);
           }
-        })
-        .catch(() => {});
+        } catch {}
+      })();
     } else {
       setCurrentFile(null);
       setContent('');
@@ -161,18 +169,20 @@ export default function Workspace({ user }) {
 
   // Firebase 변경 감지
   useEffect(() => {
-    const unsubscribe = onFilesChanged(userId, (changedFiles) => {
+    const unsubscribe = onFilesChanged(userId, async (changedFiles) => {
       if (currentFile) {
         const changed = changedFiles.find(f => f.path === currentFile.path);
         if (changed && changed.hash !== simpleHash(content)) {
-          fetch(`${API}/${userId}/file/${encodePath(currentFile.path)}`)
-            .then(r => r.json())
-            .then(data => {
-              setContent(data.content);
-              setSavedContent(data.content);
-              setSaveStatus('idle');
-            })
-            .catch(err => console.error('Failed to reload:', err));
+          try {
+            const headers = await authHeaders();
+            const r = await fetch(`${API}/${userId}/file/${encodePath(currentFile.path)}`, { headers });
+            const data = await r.json();
+            setContent(data.content);
+            setSavedContent(data.content);
+            setSaveStatus('idle');
+          } catch (err) {
+            console.error('Failed to reload:', err);
+          }
         }
       }
       loadFiles();
@@ -196,7 +206,7 @@ export default function Workspace({ user }) {
     try {
       const res = await fetch(`${API}/${userId}/file/${encodePath(fp)}`, {
         method: 'PUT',
-        headers: authHeaders(),
+        headers: await authHeaders(),
         body: JSON.stringify({ content: newContent })
       });
       const data = await res.json();
@@ -273,7 +283,7 @@ export default function Workspace({ user }) {
     try {
       await fetch(`${API}/${userId}/file/${encodePath(fp)}`, {
         method: 'PUT',
-        headers: authHeaders(),
+        headers: await authHeaders(),
         body: JSON.stringify({ content: `# ${name.replace('.md', '')}\n\n` })
       });
       await loadFiles();
@@ -303,7 +313,7 @@ export default function Workspace({ user }) {
       for (const s of samples) {
         await fetch(`${API}/${userId}/file/${encodePath(s.path)}`, {
           method: 'PUT',
-          headers: authHeaders(),
+          headers: await authHeaders(),
           body: JSON.stringify({ content: s.content })
         });
       }
@@ -334,7 +344,7 @@ export default function Workspace({ user }) {
     try {
       await fetch(`${API}/${userId}/rename`, {
         method: 'POST',
-        headers: authHeaders(),
+        headers: await authHeaders(),
         body: JSON.stringify({ oldPath: sourcePath, newPath })
       });
       await loadFiles();
@@ -362,7 +372,7 @@ export default function Workspace({ user }) {
     try {
       await fetch(`${API}/${userId}/file/${encodePath(fp)}`, {
         method: 'PUT',
-        headers: authHeaders(),
+        headers: await authHeaders(),
         body: JSON.stringify({ content: '' })
       });
       await loadFiles();
@@ -386,7 +396,7 @@ export default function Workspace({ user }) {
     try {
       await fetch(`${API}/${userId}/rename`, {
         method: 'POST',
-        headers: authHeaders(),
+        headers: await authHeaders(),
         body: JSON.stringify({ oldPath, newPath })
       });
       await loadFiles();
@@ -408,7 +418,7 @@ export default function Workspace({ user }) {
     setSidebarLoading(true);
     try {
       const folderQuery = isFolder ? '?folder=true' : '';
-      await fetch(`${API}/${userId}/file/${encodePath(fp)}${folderQuery}`, { method: 'DELETE', headers: authHeaders() });
+      await fetch(`${API}/${userId}/file/${encodePath(fp)}${folderQuery}`, { method: 'DELETE', headers: await authHeaders() });
       await loadFiles();
       updateToast(tid, `🗑️ "${name}" ${label} 삭제 완료`, 'success');
       if (currentFile?.path === fp || (isFolder && currentFile?.path?.startsWith(fp + '/'))) {
@@ -427,13 +437,14 @@ export default function Workspace({ user }) {
     const tid = addToast(`📋 "${fileName}" 복제 중...`, 'loading');
     setSidebarLoading(true);
     try {
-      const res = await fetch(`${API}/${userId}/file/${encodePath(fp)}`);
+      const headers = await authHeaders();
+      const res = await fetch(`${API}/${userId}/file/${encodePath(fp)}`, { headers });
       const data = await res.json();
       const ext = fp.lastIndexOf('.md');
       const newPath = ext > 0 ? `${fp.slice(0, ext)} (copy).md` : `${fp} (copy)`;
       await fetch(`${API}/${userId}/file/${encodePath(newPath)}`, {
         method: 'PUT',
-        headers: authHeaders(),
+        headers: await authHeaders(),
         body: JSON.stringify({ content: data.content })
       });
       await loadFiles();
@@ -463,9 +474,10 @@ export default function Workspace({ user }) {
     if (!confirm('API 토큰을 생성하시겠습니까?\n기존 토큰은 무효화됩니다.')) return;
     const tid = addToast('🔑 토큰 생성 중...', 'loading');
     try {
+      const headers = await authHeaders();
       const res = await fetch('/api/token/generate', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({ uid: user.uid, username: userId })
       });
       const data = await res.json();
@@ -710,7 +722,7 @@ export default function Workspace({ user }) {
                     const fp = targetFolder ? `${targetFolder}/${file.name}` : file.name;
                     await fetch(`${API}/${userId}/file/${encodePath(fp)}`, {
                       method: 'PUT',
-                      headers: authHeaders(),
+                      headers: await authHeaders(),
                       body: JSON.stringify({ content: text })
                     });
                   }
