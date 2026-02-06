@@ -6,7 +6,7 @@
 
 ### 변경 사항
 
-1. **agent-rust/src/main.rs**
+1. **agent/src/main.rs**
    - `start_tunnel()`: localtunnel → cloudflared
    - stderr에서 trycloudflare.com URL 파싱
    - tokio::spawn에서 stderr 계속 drain하여 터널 유지

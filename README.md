@@ -141,8 +141,7 @@ mdflare/
 │   ├── functions/          # Cloudflare Pages Functions
 │   └── dist/               # 빌드 결과물
 ├── server/                 # 로컬 개발 서버
-├── agent/                  # macOS 동기화 에이전트 (Swift)
-└── agent-rust/             # 크로스플랫폼 에이전트 (Rust, WIP)
+└── agent/                  # 크로스플랫폼 동기화 에이전트 (Rust)
 ```
 
 ---

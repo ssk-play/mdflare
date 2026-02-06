@@ -15,8 +15,7 @@
 
 ```
 GitHub: https://github.com/ssk-play/mdflare
-├── agent/          # macOS Swift 에이전트
-├── agent-rust/     # 크로스플랫폼 Rust 에이전트
+├── agent/          # 크로스플랫폼 Rust 에이전트
 ├── web/            # 웹 프론트엔드 (React)
 └── docs/           # 문서
 ```
@@ -60,7 +59,7 @@ winget install Rustlang.Rustup
 ### 2. 프로젝트 클론
 ```powershell
 git clone https://github.com/ssk-play/mdflare.git
-cd mdflare/agent-rust
+cd mdflare/agent
 ```
 
 ### 3. 빌드
@@ -161,7 +160,7 @@ Firebase Storage 또는 GitHub Releases에 업로드
 
 ## 🔧 코드 구조
 
-### Rust 에이전트 (`agent-rust/src/main.rs`)
+### Rust 에이전트 (`agent/src/main.rs`)
 ```
 ~500줄, 단일 파일
 ├── Config              # 설정 로드/저장

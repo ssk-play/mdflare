@@ -28,13 +28,13 @@ export default function Download() {
           <h3>macOS</h3>
           <p>Apple Silicon & Intel 지원</p>
           <a
-            href="https://firebasestorage.googleapis.com/v0/b/markdownflare.firebasestorage.app/o/downloads%2Fmac%2FMDFlare-Agent-1.0.3-mac.zip?alt=media&token=5098a336-fb08-4366-898c-a31736c36c5c"
+            href="https://firebasestorage.googleapis.com/v0/b/markdownflare.firebasestorage.app/o/downloads%2Fmac%2FMDFlare-Agent-mac.zip?alt=media&token=73dbd122-3cd5-4e0a-965c-137faa44bf92"
             className="cta-btn"
             style={{ textDecoration: 'none', display: 'inline-block' }}
           >
-            다운로드 (96K)
+            다운로드 (1.3MB)
           </a>
-          <span className="download-note">Swift 네이티브 · 메뉴바 앱 · v1.0.3</span>
+          <span className="download-note">Rust 네이티브 · 시스템 트레이 · v1.0.0</span>
           <span className="download-note" style={{ marginTop: 4 }}>zip 해제 후 <strong>install.command</strong> 더블클릭</span>
         </div>
 

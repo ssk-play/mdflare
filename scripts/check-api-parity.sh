@@ -46,7 +46,7 @@ check_cloud() {
 
 # Private Vault (Rust Agent) 검사
 echo -e "\n🦀 Private Vault API 검사..."
-RUST_FILE="agent-rust/src/main.rs"
+RUST_FILE="agent/src/main.rs"
 
 check_private_vault() {
   local method=$1
