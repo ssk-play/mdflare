@@ -3,7 +3,6 @@ node_modules
 .wrangler
 test-vault
 .DS_Store
-agent/build/
-agent/MDFlareAgent/MDFlareAgent
-agent/MDFlareAgent/MDFlareAgent.xcodeproj/
+agent/target/
+web/dist/
 local-data/

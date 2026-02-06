@@ -433,6 +433,54 @@ async fn api_delete_file(
     })))
 }
 
+#[derive(Deserialize)]
+struct RenameRequest {
+    #[serde(rename = "oldPath")]
+    old_path: String,
+    #[serde(rename = "newPath")]
+    new_path: String,
+}
+
+async fn api_rename(
+    State(state): State<ServerState>,
+    headers: axum::http::HeaderMap,
+    Json(body): Json<RenameRequest>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    // 인증 체크
+    let auth = headers.get(header::AUTHORIZATION).and_then(|v| v.to_str().ok());
+    check_auth(&state, auth).await?;
+    
+    let old_decoded = urlencoding::decode(&body.old_path).map(|s| s.into_owned()).unwrap_or(body.old_path.clone());
+    let new_decoded = urlencoding::decode(&body.new_path).map(|s| s.into_owned()).unwrap_or(body.new_path.clone());
+    
+    let old_file_path = state.local_path.join(&old_decoded);
+    let new_file_path = state.local_path.join(&new_decoded);
+    
+    // 보안: local_path 밖으로 나가지 못하게
+    if !old_file_path.starts_with(&state.local_path) || !new_file_path.starts_with(&state.local_path) {
+        return Err(StatusCode::FORBIDDEN);
+    }
+    
+    // 원본 파일/폴더 존재 확인
+    if !old_file_path.exists() {
+        return Err(StatusCode::NOT_FOUND);
+    }
+    
+    // 상위 폴더 생성
+    if let Some(parent) = new_file_path.parent() {
+        fs::create_dir_all(parent).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    }
+    
+    // 이름 변경 (파일/폴더 모두 지원)
+    fs::rename(&old_file_path, &new_file_path).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    
+    Ok(Json(serde_json::json!({
+        "renamed": true,
+        "oldPath": old_decoded,
+        "newPath": new_decoded
+    })))
+}
+
 async fn run_private_vault_server(config: Config) {
     let state = ServerState {
         local_path: PathBuf::from(&config.local_path),
@@ -441,12 +489,13 @@ async fn run_private_vault_server(config: Config) {
     
     let cors = CorsLayer::new()
         .allow_origin(Any)
-        .allow_methods([Method::GET, Method::PUT, Method::DELETE, Method::OPTIONS])
+        .allow_methods([Method::GET, Method::POST, Method::PUT, Method::DELETE, Method::OPTIONS])
         .allow_headers([header::CONTENT_TYPE, header::AUTHORIZATION]);
     
     let app = Router::new()
         .route("/api/files", get(api_list_files))
         .route("/api/file/*path", get(api_get_file).put(api_put_file).delete(api_delete_file))
+        .route("/api/rename", axum::routing::post(api_rename))
         .layer(cors)
         .with_state(state);
     

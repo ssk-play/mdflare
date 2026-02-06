@@ -47,7 +47,7 @@ export async function onRequest(context) {
     // CORS 헤더 추가
     const responseHeaders = new Headers(response.headers);
     responseHeaders.set('Access-Control-Allow-Origin', '*');
-    responseHeaders.set('Access-Control-Allow-Methods', 'GET, PUT, DELETE, OPTIONS');
+    responseHeaders.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
     responseHeaders.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
     
     return new Response(response.body, {
@@ -69,7 +69,7 @@ export async function onRequestOptions() {
   return new Response(null, {
     headers: {
       'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
       'Access-Control-Allow-Headers': 'Content-Type, Authorization',
     },
   });

@@ -1,12 +1,13 @@
 {
   "name": "mdflare",
-  "version": "0.1.0",
+  "version": "1.0.4",
   "private": true,
   "description": "🔥 MDFlare — Local markdown folder sync to web",
   "scripts": {
     "dev": "concurrently \"npm run dev:server\" \"npm run dev:web\"",
     "dev:server": "node server/index.js",
-    "dev:web": "cd web && npx vite"
+    "dev:web": "cd web && npx vite",
+    "test:api": "./scripts/check-api-parity.sh"
   },
   "dependencies": {
     "concurrently": "^9.0.0",

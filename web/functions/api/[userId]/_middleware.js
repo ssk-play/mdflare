@@ -6,6 +6,12 @@ export async function onRequest(context) {
   const username = params.userId;
   const method = request.method;
 
+  // 정적 라우트는 미들웨어 스킵 (username, token 등)
+  const staticRoutes = ['username', 'token'];
+  if (staticRoutes.includes(username)) {
+    return context.next();
+  }
+
   // _usernames/{username} → { uid } 매핑 조회
   const obj = await env.VAULT.get(`_usernames/${username}`);
   if (!obj) {

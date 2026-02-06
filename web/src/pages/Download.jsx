@@ -1,9 +1,19 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { getAppName } from '../components/AppTitle';
 
+const STORAGE_BASE = 'https://firebasestorage.googleapis.com/v0/b/markdownflare.firebasestorage.app/o';
+const META_URL = `${STORAGE_BASE}/downloads%2Fmac%2Fmeta.json?alt=media`;
+const downloadUrl = (version) =>
+  `${STORAGE_BASE}/downloads%2Fmac%2FMDFlare-Agent-${version}-mac.zip?alt=media`;
+
 export default function Download() {
   const navigate = useNavigate();
+  const [macMeta, setMacMeta] = useState(null);
+
+  useEffect(() => {
+    fetch(META_URL).then(r => r.json()).then(setMacMeta).catch(() => {});
+  }, []);
 
   return (
     <div className="landing">
@@ -28,14 +38,14 @@ export default function Download() {
           <h3>macOS</h3>
           <p>Apple Silicon & Intel 지원</p>
           <a
-            href="https://firebasestorage.googleapis.com/v0/b/markdownflare.firebasestorage.app/o/downloads%2Fmac%2FMDFlare-Agent-1.0.3-mac.zip?alt=media&token=5098a336-fb08-4366-898c-a31736c36c5c"
+            href={macMeta ? downloadUrl(macMeta.version) : '#'}
             className="cta-btn"
             style={{ textDecoration: 'none', display: 'inline-block' }}
           >
-            다운로드 (96K)
+            다운로드{macMeta ? ` (${macMeta.size})` : ''}
           </a>
-          <span className="download-note">Swift 네이티브 · 메뉴바 앱 · v1.0.3</span>
-          <span className="download-note" style={{ marginTop: 4 }}>zip 해제 후 <strong>install.command</strong> 더블클릭</span>
+          <span className="download-note">Rust 네이티브 · 시스템 트레이{macMeta ? ` · v${macMeta.version}` : ''}</span>
+          <span className="download-note" style={{ marginTop: 4 }}>zip 해제 후 실행</span>
         </div>
 
         <div className="download-card">
