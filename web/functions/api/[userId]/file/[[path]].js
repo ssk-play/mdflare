@@ -9,7 +9,7 @@ export async function onRequest(context) {
 
   switch (request.method) {
     case 'GET':
-      return handleGet(env, r2Key, filePath);
+      return handleGet(env, r2Key, filePath, userId, data);
     case 'PUT':
       return handlePut(env, r2Key, filePath, request);
     case 'DELETE':
@@ -19,7 +19,45 @@ export async function onRequest(context) {
   }
 }
 
-async function handleGet(env, r2Key, filePath) {
+// 파일 공개 여부 확인
+async function isFilePublic(env, userId, filePath) {
+  // 1. 파일별 공개 설정 확인
+  const metaKey = `_meta/${userId}/public/${filePath}`;
+  const meta = await env.VAULT.get(metaKey);
+  if (meta) {
+    try {
+      const data = JSON.parse(await meta.text());
+      if (data.public === true) return true;
+    } catch {}
+  }
+  
+  // 2. 상위 폴더 공개 설정 확인 (폴더 전체 공개)
+  const parts = filePath.split('/');
+  for (let i = parts.length - 1; i >= 0; i--) {
+    const folderPath = parts.slice(0, i).join('/') || '_root';
+    const folderMetaKey = `_meta/${userId}/public/${folderPath}/_folder`;
+    const folderMeta = await env.VAULT.get(folderMetaKey);
+    if (folderMeta) {
+      try {
+        const data = JSON.parse(await folderMeta.text());
+        if (data.public === true) return true;
+      } catch {}
+    }
+  }
+  
+  return false;
+}
+
+async function handleGet(env, r2Key, filePath, userId, data) {
+  // 권한 체크: 소유자가 아니면 공개 파일인지 확인
+  if (data.needsPublicCheck) {
+    const isPublic = await isFilePublic(env, userId, filePath);
+    if (!isPublic) {
+      return Response.json({ error: 'Access denied' }, { status: 403 });
+    }
+    data.isPublic = true;
+  }
+
   const object = await env.VAULT.get(r2Key);
   if (!object) {
     return Response.json({ error: 'File not found' }, { status: 404 });
@@ -30,7 +68,8 @@ async function handleGet(env, r2Key, filePath) {
     path: filePath,
     content,
     size: object.size,
-    modified: object.uploaded.toISOString()
+    modified: object.uploaded.toISOString(),
+    public: data.isPublic || false
   });
 }
 

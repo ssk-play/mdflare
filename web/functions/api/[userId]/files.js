@@ -4,6 +4,11 @@ export async function onRequestGet(context) {
   const userId = data.resolvedUid || params.userId;
   const prefix = `${userId}/`;
 
+  // 권한 체크: 소유자만 파일 목록 조회 가능
+  if (data.needsPublicCheck) {
+    return Response.json({ error: 'Access denied' }, { status: 403 });
+  }
+
   try {
     const listed = await env.VAULT.list({ prefix });
     const tree = buildTreeFromR2(listed.objects, prefix);
