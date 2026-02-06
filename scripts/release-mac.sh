@@ -23,7 +23,7 @@ BINARY="$ROOT_DIR/agent/target/release/mdflare-agent"
 ZIP="/tmp/MDFlare-Agent-${VERSION}-mac.zip"
 
 # 2. zip 패키징
-zip -j "$ZIP" "$BINARY"
+zip -j "$ZIP" "$BINARY" "$ROOT_DIR/agent/install.command"
 SIZE=$(du -h "$ZIP" | cut -f1 | xargs)
 
 echo "📤 업로드 중... ($SIZE)"
