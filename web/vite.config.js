@@ -1,11 +1,14 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+import { readFileSync } from 'fs';
+
+const version = readFileSync('../VERSION', 'utf-8').trim();
 
 export default defineConfig({
   define: {
     __BUILD_TIME__: JSON.stringify(new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })),
-    __BUILD_VERSION__: JSON.stringify(process.env.npm_package_version || '0.1.0'),
-    __LAST_CHANGE__: JSON.stringify('에이전트 v1.0.3 + 브라우저 OAuth 로그인'),
+    __BUILD_VERSION__: JSON.stringify(version),
+    __LAST_CHANGE__: JSON.stringify('Rust 에이전트 + 동적 다운로드'),
   },
   plugins: [react()],
   server: {

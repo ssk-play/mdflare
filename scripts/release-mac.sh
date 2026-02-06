@@ -2,38 +2,42 @@
 # macOS 에이전트 패치 버전 업 → 빌드 → Firebase Storage 배포
 set -e
 
-AGENT_DIR="$(cd "$(dirname "$0")/../agent" && pwd)"
-CARGO_TOML="$AGENT_DIR/Cargo.toml"
+ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+VERSION_FILE="$ROOT_DIR/VERSION"
+CARGO_TOML="$ROOT_DIR/agent/Cargo.toml"
 BUCKET="gs://markdownflare.firebasestorage.app/downloads/mac"
 
-# 1. 현재 버전 읽기
-CURRENT=$(grep '^version' "$CARGO_TOML" | head -1 | sed 's/.*"\(.*\)"/\1/')
+# 1. 현재 버전 읽기 → 패치 버전 업
+CURRENT=$(cat "$VERSION_FILE" | tr -d '[:space:]')
 IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT"
 NEW_VERSION="$MAJOR.$MINOR.$((PATCH + 1))"
 
 echo "📦 $CURRENT → $NEW_VERSION"
 
-# 2. Cargo.toml 버전 업데이트
+# 2. VERSION 파일 업데이트
+echo "$NEW_VERSION" > "$VERSION_FILE"
+
+# 3. Cargo.toml 버전 동기화
 sed -i '' "s/^version = \"$CURRENT\"/version = \"$NEW_VERSION\"/" "$CARGO_TOML"
 
-# 3. 빌드
+# 4. 빌드
 echo "🔨 빌드 중..."
 source "$HOME/.cargo/env" 2>/dev/null || true
-(cd "$AGENT_DIR" && cargo build --release)
+(cd "$ROOT_DIR/agent" && cargo build --release)
 
-BINARY="$AGENT_DIR/target/release/mdflare-agent"
+BINARY="$ROOT_DIR/agent/target/release/mdflare-agent"
 ZIP="/tmp/MDFlare-Agent-${NEW_VERSION}-mac.zip"
 
-# 4. zip 패키징
+# 5. zip 패키징
 zip -j "$ZIP" "$BINARY"
 SIZE=$(du -h "$ZIP" | cut -f1 | xargs)
 
 echo "📤 업로드 중... ($SIZE)"
 
-# 5. Firebase Storage 업로드
+# 6. Firebase Storage 업로드
 gsutil cp "$ZIP" "$BUCKET/MDFlare-Agent-${NEW_VERSION}-mac.zip"
 
-# 6. meta.json 업데이트
+# 7. meta.json 업데이트
 echo "{\"version\":\"$NEW_VERSION\",\"size\":\"$SIZE\",\"date\":\"$(date +%Y-%m-%d)\"}" | \
   gsutil -h "Content-Type:application/json" cp - "$BUCKET/meta.json"
 
