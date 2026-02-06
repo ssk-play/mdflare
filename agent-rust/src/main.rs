@@ -460,12 +460,12 @@ async fn run_private_vault_server(config: Config) {
     println!("🔐 Private Vault 서버 시작: http://localhost:{}", config.server_port);
     println!("🔑 로컬 연결 토큰: {}", local_token);
     
-    // bore.pub 터널 시작 (외부 접속용)
+    // localtunnel 터널 시작 (외부 접속용)
     let server_token = config.server_token.clone();
     tokio::spawn(async move {
         match start_tunnel(config.server_port, &server_token).await {
-            Ok((remote_port, external_token)) => {
-                println!("🌍 외부 접속: bore.pub:{}", remote_port);
+            Ok((url, external_token)) => {
+                println!("🌍 외부 접속: {}", url);
                 println!("🔑 외부 연결 토큰: {}", external_token);
             }
             Err(e) => {
@@ -478,22 +478,50 @@ async fn run_private_vault_server(config: Config) {
     axum::serve(listener, app).await.unwrap();
 }
 
-// bore.pub 터널 시작
-async fn start_tunnel(local_port: u16, token: &str) -> Result<(u16, String), Box<dyn std::error::Error + Send + Sync>> {
-    use bore_cli::client::Client;
+// localtunnel 터널 시작
+async fn start_tunnel(local_port: u16, token: &str) -> Result<(String, String), Box<dyn std::error::Error + Send + Sync>> {
+    use std::process::Stdio;
+    use tokio::process::Command;
+    use tokio::io::{BufReader, AsyncBufReadExt};
     
-    let client = Client::new("localhost", local_port, "bore.pub", 0, None).await?;
-    let remote_port = client.remote_port();
-    let external_token = generate_connection_token_with_host("bore.pub", remote_port, token);
+    let mut child = Command::new("npx")
+        .args(["localtunnel", "--port", &local_port.to_string()])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()?;
     
-    // 터널 유지
-    tokio::spawn(async move {
-        if let Err(e) = client.listen().await {
-            eprintln!("터널 에러: {}", e);
+    let stdout = child.stdout.take().ok_or("stdout 없음")?;
+    let mut reader = BufReader::new(stdout).lines();
+    
+    // URL 파싱 (your url is: https://xxx.loca.lt)
+    let url = loop {
+        if let Some(line) = reader.next_line().await? {
+            if line.contains("your url is:") {
+                let url = line.split("your url is:").nth(1)
+                    .map(|s| s.trim().to_string())
+                    .ok_or("URL 파싱 실패")?;
+                break url;
+            }
+        } else {
+            return Err("localtunnel URL을 받지 못함".into());
         }
+    };
+    
+    let external_token = generate_connection_token_with_url(&url, token);
+    
+    // 프로세스 유지 (백그라운드)
+    tokio::spawn(async move {
+        let _ = child.wait().await;
     });
     
-    Ok((remote_port, external_token))
+    Ok((url, external_token))
+}
+
+// URL 기반 연결 토큰 생성
+fn generate_connection_token_with_url(url: &str, token: &str) -> String {
+    use base64::{Engine as _, engine::general_purpose::STANDARD};
+    let plain = format!("{}|{}", url, token);
+    STANDARD.encode(plain.as_bytes())
 }
 
 // 외부 호스트용 연결 토큰 생성
