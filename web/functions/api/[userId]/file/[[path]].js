@@ -5,7 +5,7 @@ export async function onRequest(context) {
   const { request, params, env, data } = context;
   const userId = data.resolvedUid || params.userId;
   const filePath = decodeURIComponent(params.path.join('/'));
-  const r2Key = `${userId}/${filePath}`;
+  const r2Key = `vaults/${userId}/${filePath}`;
 
   switch (request.method) {
     case 'GET':

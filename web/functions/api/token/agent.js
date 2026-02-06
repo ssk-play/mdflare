@@ -1,6 +1,6 @@
 // POST /api/token/agent — 에이전트용 토큰 생성 (인증 필요)
 // body: { uid, username }
-import { verifyFirebaseToken, extractToken } from '../lib/auth.js';
+import { verifyFirebaseToken, extractToken } from '../../lib/auth.js';
 
 export async function onRequestPost(context) {
   try {

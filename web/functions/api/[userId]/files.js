@@ -2,7 +2,7 @@
 export async function onRequestGet(context) {
   const { params, env, data } = context;
   const userId = data.resolvedUid || params.userId;
-  const prefix = `${userId}/`;
+  const prefix = `vaults/${userId}/`;
 
   // 권한 체크: 소유자만 파일 목록 조회 가능
   if (data.needsPublicCheck) {

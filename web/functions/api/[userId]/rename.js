@@ -6,8 +6,8 @@ export async function onRequestPost(context) {
   const oldPath = decodeURIComponent(body.oldPath);
   const newPath = decodeURIComponent(body.newPath);
 
-  const oldKey = `${userId}/${oldPath}`;
-  const newKey = `${userId}/${newPath}`;
+  const oldKey = `vaults/${userId}/${oldPath}`;
+  const newKey = `vaults/${userId}/${newPath}`;
 
   try {
     const object = await env.VAULT.get(oldKey);
