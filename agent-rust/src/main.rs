@@ -454,12 +454,53 @@ async fn run_private_vault_server(config: Config) {
         .with_state(state);
     
     let addr = SocketAddr::from(([0, 0, 0, 0], config.server_port));
-    let connection_token = generate_connection_token(config.server_port, &config.server_token);
+    
+    // 로컬 연결 토큰
+    let local_token = generate_connection_token(config.server_port, &config.server_token);
     println!("🔐 Private Vault 서버 시작: http://localhost:{}", config.server_port);
-    println!("🔑 연결 토큰: {}", connection_token);
+    println!("🔑 로컬 연결 토큰: {}", local_token);
+    
+    // bore.pub 터널 시작 (외부 접속용)
+    let server_token = config.server_token.clone();
+    tokio::spawn(async move {
+        match start_tunnel(config.server_port, &server_token).await {
+            Ok((remote_port, external_token)) => {
+                println!("🌍 외부 접속: bore.pub:{}", remote_port);
+                println!("🔑 외부 연결 토큰: {}", external_token);
+            }
+            Err(e) => {
+                println!("⚠️ 터널 연결 실패 (로컬만 사용): {}", e);
+            }
+        }
+    });
     
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
     axum::serve(listener, app).await.unwrap();
+}
+
+// bore.pub 터널 시작
+async fn start_tunnel(local_port: u16, token: &str) -> Result<(u16, String), Box<dyn std::error::Error + Send + Sync>> {
+    use bore_cli::client::Client;
+    
+    let client = Client::new("localhost", local_port, "bore.pub", 0, None).await?;
+    let remote_port = client.remote_port();
+    let external_token = generate_connection_token_with_host("bore.pub", remote_port, token);
+    
+    // 터널 유지
+    tokio::spawn(async move {
+        if let Err(e) = client.listen().await {
+            eprintln!("터널 에러: {}", e);
+        }
+    });
+    
+    Ok((remote_port, external_token))
+}
+
+// 외부 호스트용 연결 토큰 생성
+fn generate_connection_token_with_host(host: &str, port: u16, token: &str) -> String {
+    use base64::{Engine as _, engine::general_purpose::STANDARD};
+    let plain = format!("http://{}:{}|{}", host, port, token);
+    STANDARD.encode(plain.as_bytes())
 }
 
 // ============================================================================

@@ -44,6 +44,9 @@ chrono = { version = "0.4", features = ["serde"] }
 # Base64 인코딩
 base64 = "0.22"
 
+# 터널링 (외부 접속)
+bore-cli = "0.6"
+
 # 파일 시스템 탐색
 walkdir = "2.5"
 dirs = "5.0"
