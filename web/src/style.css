@@ -1462,3 +1462,23 @@ body.light-mode .cta-btn.secondary {
 body.light-mode .cta-btn.secondary:hover {
   background: #f3f4f6;
 }
+
+/* Advanced Settings */
+.advanced-settings {
+  margin-top: 12px;
+  font-size: 13px;
+  color: #8b949e;
+}
+
+.advanced-settings summary {
+  cursor: pointer;
+  padding: 8px 0;
+}
+
+.advanced-settings summary:hover {
+  color: #e6edf3;
+}
+
+.advanced-settings .form-group {
+  margin-top: 12px;
+}

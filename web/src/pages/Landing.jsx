@@ -103,27 +103,31 @@ export default function Landing({ user, username }) {
         ) : (
           <div className="private-vault-form">
             <h3>🔐 Private Vault 연결</h3>
-            <p className="form-desc">에이전트가 실행 중인 서버에 연결합니다.</p>
+            <p className="form-desc">에이전트에서 복사한 토큰을 입력하세요.</p>
             
             <div className="form-group">
-              <label>서버 주소</label>
-              <input
-                type="text"
-                value={serverUrl}
-                onChange={(e) => setServerUrl(e.target.value)}
-                placeholder="http://localhost:7779"
-              />
-            </div>
-            
-            <div className="form-group">
-              <label>토큰 (선택)</label>
+              <label>토큰</label>
               <input
                 type="password"
                 value={token}
                 onChange={(e) => setToken(e.target.value)}
                 placeholder="에이전트에서 복사한 토큰"
+                autoFocus
               />
             </div>
+            
+            <details className="advanced-settings">
+              <summary>고급 설정</summary>
+              <div className="form-group">
+                <label>서버 주소</label>
+                <input
+                  type="text"
+                  value={serverUrl}
+                  onChange={(e) => setServerUrl(e.target.value)}
+                  placeholder="http://localhost:7779"
+                />
+              </div>
+            </details>
             
             {error && <p className="form-error">{error}</p>}
             
