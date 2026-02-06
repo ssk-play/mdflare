@@ -16,17 +16,20 @@ export async function onRequest(context) {
     return Response.json({ error: 'server parameter required' }, { status: 400 });
   }
   
-  // 대상 URL 생성
-  const targetUrl = `http://${server}${targetPath}`;
+  // 대상 URL 생성 (trycloudflare.com은 https, 나머지는 http)
+  const protocol = server.includes('trycloudflare.com') ? 'https' : 'http';
+  const targetUrl = `${protocol}://${server}${targetPath}`;
   console.log('[Tunnel] 대상 URL:', targetUrl);
   
-  // 원본 요청의 헤더 복사 (Host 제외)
+  // 원본 요청의 헤더 복사 (Host는 대상 서버로 설정)
   const headers = new Headers();
   for (const [key, value] of request.headers.entries()) {
     if (key.toLowerCase() !== 'host') {
       headers.set(key, value);
     }
   }
+  // Host 헤더를 대상 서버로 설정 (Cloudflare 터널 필수)
+  headers.set('Host', server);
   
   try {
     console.log('[Tunnel] fetch 시작...');

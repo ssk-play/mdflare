@@ -53,7 +53,7 @@ export default function Landing({ user, username }) {
       console.log('[PV] 외부 서버 여부:', isExternal);
       
       const testUrl = isExternal 
-        ? `/_tunnel?server=${encodeURIComponent(serverUrl.replace('http://', ''))}&path=/api/files`
+        ? `/_tunnel?server=${encodeURIComponent(serverUrl.replace(/^https?:\/\//, ''))}&path=/api/files`
         : `${serverUrl}/api/files`;
       console.log('[PV] 테스트 URL:', testUrl);
       

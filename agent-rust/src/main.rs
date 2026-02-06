@@ -9,7 +9,7 @@ use std::time::Duration;
 use axum::{
     extract::{Path as AxumPath, State},
     http::{header, Method, StatusCode},
-    routing::{delete, get, put},
+    routing::get,
     Json, Router,
 };
 use directories::ProjectDirs;
@@ -215,8 +215,6 @@ impl ApiClient {
 // ============================================================================
 
 fn scan_local_md_files(local_path: &Path) -> Vec<FileItem> {
-    let mut root_items: Vec<FileItem> = Vec::new();
-    
     fn scan_dir(dir: &Path, base: &Path) -> Vec<FileItem> {
         let mut items = Vec::new();
         
@@ -293,8 +291,7 @@ fn scan_local_md_files(local_path: &Path) -> Vec<FileItem> {
         false
     }
     
-    root_items = scan_dir(local_path, local_path);
-    root_items
+    scan_dir(local_path, local_path)
 }
 
 fn flatten_file_paths(items: &[FileItem]) -> Vec<String> {
@@ -478,39 +475,46 @@ async fn run_private_vault_server(config: Config) {
     axum::serve(listener, app).await.unwrap();
 }
 
-// localtunnel 터널 시작
+// cloudflared Quick Tunnel 시작
 async fn start_tunnel(local_port: u16, token: &str) -> Result<(String, String), Box<dyn std::error::Error + Send + Sync>> {
     use std::process::Stdio;
     use tokio::process::Command;
     use tokio::io::{BufReader, AsyncBufReadExt};
     
-    let mut child = Command::new("npx")
-        .args(["localtunnel", "--port", &local_port.to_string()])
+    let mut child = Command::new("cloudflared")
+        .args(["tunnel", "--url", &format!("http://localhost:{}", local_port)])
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()?;
     
-    let stdout = child.stdout.take().ok_or("stdout 없음")?;
-    let mut reader = BufReader::new(stdout).lines();
+    let stderr = child.stderr.take().ok_or("stderr 없음")?;
+    let mut reader = BufReader::new(stderr).lines();
     
-    // URL 파싱 (your url is: https://xxx.loca.lt)
+    // URL 파싱 (stderr에서 trycloudflare.com URL 찾기)
     let url = loop {
         if let Some(line) = reader.next_line().await? {
-            if line.contains("your url is:") {
-                let url = line.split("your url is:").nth(1)
-                    .map(|s| s.trim().to_string())
-                    .ok_or("URL 파싱 실패")?;
-                break url;
+            if line.contains("trycloudflare.com") {
+                // URL 추출: https://xxx.trycloudflare.com
+                if let Some(start) = line.find("https://") {
+                    let url_part = &line[start..];
+                    if let Some(end) = url_part.find(|c: char| c.is_whitespace() || c == '|') {
+                        break url_part[..end].to_string();
+                    } else {
+                        break url_part.trim().to_string();
+                    }
+                }
             }
         } else {
-            return Err("localtunnel URL을 받지 못함".into());
+            return Err("cloudflared URL을 받지 못함".into());
         }
     };
     
     let external_token = generate_connection_token_with_url(&url, token);
     
-    // 프로세스 유지 (백그라운드)
+    // 프로세스 유지 (백그라운드) - stderr 계속 읽어서 drain
     tokio::spawn(async move {
+        // stderr를 계속 읽어서 프로세스가 block되지 않도록 함
+        while let Ok(Some(_)) = reader.next_line().await {}
         let _ = child.wait().await;
     });
     
@@ -521,13 +525,6 @@ async fn start_tunnel(local_port: u16, token: &str) -> Result<(String, String), 
 fn generate_connection_token_with_url(url: &str, token: &str) -> String {
     use base64::{Engine as _, engine::general_purpose::STANDARD};
     let plain = format!("{}|{}", url, token);
-    STANDARD.encode(plain.as_bytes())
-}
-
-// 외부 호스트용 연결 토큰 생성
-fn generate_connection_token_with_host(host: &str, port: u16, token: &str) -> String {
-    use base64::{Engine as _, engine::general_purpose::STANDARD};
-    let plain = format!("http://{}:{}|{}", host, port, token);
     STANDARD.encode(plain.as_bytes())
 }
 
