@@ -1,5 +1,6 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
+import { getAppName } from '../components/AppTitle';
 
 export default function Download() {
   const navigate = useNavigate();
@@ -7,7 +8,7 @@ export default function Download() {
   return (
     <div className="landing">
       <nav className="landing-nav">
-        <h1 onClick={() => navigate('/')} style={{ cursor: 'pointer' }}>🔥 MDFlare</h1>
+        <h1 onClick={() => navigate('/')} style={{ cursor: 'pointer' }}>🔥 {getAppName()}</h1>
         <div style={{ display: 'flex', gap: 12 }}>
           <button className="login-btn" onClick={() => navigate('/')}>홈</button>
         </div>
