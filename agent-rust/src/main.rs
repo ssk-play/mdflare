@@ -9,7 +9,7 @@ use std::time::Duration;
 use axum::{
     extract::{Path as AxumPath, State},
     http::{header, Method, StatusCode},
-    routing::{delete, get, put},
+    routing::get,
     Json, Router,
 };
 use directories::ProjectDirs;
@@ -215,8 +215,6 @@ impl ApiClient {
 // ============================================================================
 
 fn scan_local_md_files(local_path: &Path) -> Vec<FileItem> {
-    let mut root_items: Vec<FileItem> = Vec::new();
-    
     fn scan_dir(dir: &Path, base: &Path) -> Vec<FileItem> {
         let mut items = Vec::new();
         
@@ -293,8 +291,7 @@ fn scan_local_md_files(local_path: &Path) -> Vec<FileItem> {
         false
     }
     
-    root_items = scan_dir(local_path, local_path);
-    root_items
+    scan_dir(local_path, local_path)
 }
 
 fn flatten_file_paths(items: &[FileItem]) -> Vec<String> {
@@ -526,13 +523,6 @@ async fn start_tunnel(local_port: u16, token: &str) -> Result<(String, String), 
 fn generate_connection_token_with_url(url: &str, token: &str) -> String {
     use base64::{Engine as _, engine::general_purpose::STANDARD};
     let plain = format!("{}|{}", url, token);
-    STANDARD.encode(plain.as_bytes())
-}
-
-// 외부 호스트용 연결 토큰 생성
-fn generate_connection_token_with_host(host: &str, port: u16, token: &str) -> String {
-    use base64::{Engine as _, engine::general_purpose::STANDARD};
-    let plain = format!("http://{}:{}|{}", host, port, token);
     STANDARD.encode(plain.as_bytes())
 }
 
