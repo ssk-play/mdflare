@@ -369,6 +369,7 @@ fn run_tray_app(config: Config) {
     let path_item = MenuItem::new(format!("📁 {}", shorten_path(&config.local_path)), false, None);
     let sync_item = MenuItem::new("🔄 지금 동기화", true, None);
     let folder_item = MenuItem::new("📂 폴더 열기", true, None);
+    let change_folder_item = MenuItem::new("⚙️ 폴더 변경...", true, None);
     let web_item = MenuItem::new("🌐 웹에서 열기", true, None);
     let quit_item = MenuItem::new("종료", true, None);
     
@@ -377,12 +378,14 @@ fn run_tray_app(config: Config) {
     menu.append(&PredefinedMenuItem::separator()).ok();
     menu.append(&sync_item).ok();
     menu.append(&folder_item).ok();
+    menu.append(&change_folder_item).ok();
     menu.append(&web_item).ok();
     menu.append(&PredefinedMenuItem::separator()).ok();
     menu.append(&quit_item).ok();
     
     let sync_id = sync_item.id().clone();
     let folder_id = folder_item.id().clone();
+    let change_folder_id = change_folder_item.id().clone();
     let web_id = web_item.id().clone();
     let quit_id = quit_item.id().clone();
     
@@ -453,6 +456,25 @@ fn run_tray_app(config: Config) {
                 }
             } else if event.id == folder_id {
                 open::that(&config_for_menu.local_path).ok();
+            } else if event.id == change_folder_id {
+                // 새 폴더 선택
+                if let Some(new_path) = rfd::FileDialog::new()
+                    .set_title("새 동기화 폴더 선택")
+                    .set_directory(&config_for_menu.local_path)
+                    .pick_folder()
+                {
+                    let mut new_config = config_for_menu.clone();
+                    new_config.local_path = new_path.to_string_lossy().to_string();
+                    new_config.save();
+                    println!("📁 폴더 변경됨: {}", new_config.local_path);
+                    println!("⚠️ 변경 적용을 위해 앱을 재시작합니다...");
+                    
+                    // 앱 재시작
+                    if let Ok(exe) = std::env::current_exe() {
+                        std::process::Command::new(exe).spawn().ok();
+                    }
+                    *control_flow = ControlFlow::Exit;
+                }
             } else if event.id == web_id {
                 let url = format!("{}/{}", config_for_menu.api_base, config_for_menu.username);
                 open::that(url).ok();
@@ -491,11 +513,18 @@ fn main() {
             config.username = username;
             config.api_token = token;
             
-            // 기본 폴더 설정 (없으면)
+            // 폴더 선택 다이얼로그
             if config.local_path.is_empty() {
-                if let Some(docs) = dirs::document_dir() {
-                    config.local_path = docs.join("MDFlare").to_string_lossy().to_string();
-                }
+                let default_path = dirs::document_dir()
+                    .map(|d| d.join("MDFlare"))
+                    .unwrap_or_default();
+                
+                config.local_path = rfd::FileDialog::new()
+                    .set_title("MDFlare 동기화 폴더 선택")
+                    .set_directory(&default_path)
+                    .pick_folder()
+                    .map(|p| p.to_string_lossy().to_string())
+                    .unwrap_or_else(|| default_path.to_string_lossy().to_string());
             }
             
             // 폴더 생성
