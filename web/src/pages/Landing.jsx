@@ -44,8 +44,14 @@ export default function Landing({ user, username }) {
     try {
       const { serverUrl, token } = parseConnectionToken(connectionToken.trim());
       
+      // bore.pub 등 외부 터널은 프록시 통해 연결
+      const isExternal = !serverUrl.includes('localhost') && !serverUrl.includes('127.0.0.1');
+      const testUrl = isExternal 
+        ? `/api/tunnel?server=${encodeURIComponent(serverUrl.replace('http://', ''))}&path=/api/files`
+        : `${serverUrl}/api/files`;
+      
       // 서버 연결 테스트
-      const res = await fetch(`${serverUrl}/api/files`, {
+      const res = await fetch(testUrl, {
         headers: token ? { 'Authorization': `Bearer ${token}` } : {}
       });
       
@@ -57,6 +63,7 @@ export default function Landing({ user, username }) {
       localStorage.setItem('mdflare_mode', 'private_vault');
       localStorage.setItem('mdflare_server_url', serverUrl);
       localStorage.setItem('mdflare_token', token);
+      localStorage.setItem('mdflare_use_proxy', isExternal ? 'true' : 'false');
       
       // Private Vault 워크스페이스로 이동
       navigate('/local');
