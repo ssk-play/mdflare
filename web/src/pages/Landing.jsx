@@ -42,22 +42,35 @@ export default function Landing({ user, username }) {
     setConnecting(true);
     
     try {
+      console.log('[PV] 연결 시작, 토큰:', connectionToken.trim().substring(0, 20) + '...');
+      
       const { serverUrl, token } = parseConnectionToken(connectionToken.trim());
+      console.log('[PV] 파싱 결과:', { serverUrl, tokenLength: token?.length });
       
       // bore.pub 등 외부 터널은 프록시 통해 연결
       const isExternal = !serverUrl.includes('localhost') && !serverUrl.includes('127.0.0.1');
+      console.log('[PV] 외부 서버 여부:', isExternal);
+      
       const testUrl = isExternal 
         ? `/api/tunnel?server=${encodeURIComponent(serverUrl.replace('http://', ''))}&path=/api/files`
         : `${serverUrl}/api/files`;
+      console.log('[PV] 테스트 URL:', testUrl);
       
       // 서버 연결 테스트
+      console.log('[PV] fetch 시작...');
       const res = await fetch(testUrl, {
         headers: token ? { 'Authorization': `Bearer ${token}` } : {}
       });
+      console.log('[PV] fetch 응답:', res.status, res.statusText);
       
       if (!res.ok) {
-        throw new Error('서버 연결 실패');
+        const text = await res.text();
+        console.error('[PV] 응답 본문:', text);
+        throw new Error(`서버 응답 ${res.status}: ${text}`);
       }
+      
+      const data = await res.json();
+      console.log('[PV] 성공! 파일 수:', data.files?.length);
       
       // localStorage에 저장
       localStorage.setItem('mdflare_mode', 'private_vault');
@@ -68,7 +81,8 @@ export default function Landing({ user, username }) {
       // Private Vault 워크스페이스로 이동
       navigate('/local');
     } catch (err) {
-      setError('연결 실패. 에이전트가 실행 중인지 확인하세요.');
+      console.error('[PV] 연결 실패:', err);
+      setError(`연결 실패: ${err.message}`);
     } finally {
       setConnecting(false);
     }
