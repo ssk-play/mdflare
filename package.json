@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "concurrently \"npm run dev:server\" \"npm run dev:web\"",
     "dev:server": "node server/index.js",
-    "dev:web": "cd web && npx vite"
+    "dev:web": "cd web && npx vite",
+    "test:api": "./scripts/check-api-parity.sh"
   },
   "dependencies": {
     "concurrently": "^9.0.0",
