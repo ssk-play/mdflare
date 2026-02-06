@@ -47,9 +47,13 @@ export default function AgentAuth() {
       }
 
       // 새 토큰 생성 (기존 토큰 유지하면서 추가 토큰 발급)
+      const idToken = await user.getIdToken();
       const tokenRes = await fetch('/api/token/agent', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${idToken}`
+        },
         body: JSON.stringify({ uid: user.uid, username: data.username })
       });
       const tokenData = await tokenRes.json();
