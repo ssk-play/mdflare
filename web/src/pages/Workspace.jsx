@@ -6,6 +6,7 @@ import { EditorView } from '@codemirror/view';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { updateFileMeta, onFilesChanged, simpleHash, logout, auth } from '../firebase';
+import { getAppName } from '../components/AppTitle';
 
 const API = '/api';
 const AUTO_SAVE_DELAY = 1000;
@@ -601,7 +602,7 @@ export default function Workspace({ user, isPrivateVault = false }) {
           <button className="sidebar-toggle" onClick={() => setSidebarOpen(!sidebarOpen)}>
             {sidebarOpen ? '✕' : '☰'}
           </button>
-          <h1 onClick={() => navigate(`/${userId}`)} style={{ cursor: 'pointer' }}>🔥 MDFlare</h1>
+          <h1 onClick={() => navigate(`/${userId}`)} style={{ cursor: 'pointer' }}>🔥 {getAppName()}</h1>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <span className="user-badge">👤 {user?.displayName || userId}</span>

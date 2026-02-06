@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Routes, Route } from 'react-router-dom';
 import { onAuthChange } from './firebase';
+import { useAppTitle, getAppName } from './components/AppTitle';
 import Landing from './pages/Landing';
 import Workspace from './pages/Workspace';
 import SetUsername from './pages/SetUsername';
@@ -36,11 +37,14 @@ export default function App() {
     return unsub;
   }, []);
 
+  // 공통 타이틀 설정
+  useAppTitle();
+
   if (loading) {
     return (
       <div className="loading-screen">
         <div className="logo">🔥</div>
-        <p>MDFlare</p>
+        <p>{getAppName()}</p>
       </div>
     );
   }
