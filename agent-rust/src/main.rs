@@ -511,8 +511,10 @@ async fn start_tunnel(local_port: u16, token: &str) -> Result<(String, String), 
     
     let external_token = generate_connection_token_with_url(&url, token);
     
-    // 프로세스 유지 (백그라운드)
+    // 프로세스 유지 (백그라운드) - stderr 계속 읽어서 drain
     tokio::spawn(async move {
+        // stderr를 계속 읽어서 프로세스가 block되지 않도록 함
+        while let Ok(Some(_)) = reader.next_line().await {}
         let _ = child.wait().await;
     });
     
