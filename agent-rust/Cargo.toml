@@ -41,6 +41,9 @@ env_logger = "0.11"
 # 시간 처리
 chrono = { version = "0.4", features = ["serde"] }
 
+# Base64 인코딩
+base64 = "0.22"
+
 # 파일 시스템 탐색
 walkdir = "2.5"
 dirs = "5.0"

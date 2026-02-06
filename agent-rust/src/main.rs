@@ -78,6 +78,13 @@ fn generate_token() -> String {
     format!("{:x}{:x}", now.as_secs(), now.subsec_nanos())
 }
 
+// 연결 토큰 생성: base64(serverUrl|token)
+fn generate_connection_token(port: u16, token: &str) -> String {
+    use base64::{Engine as _, engine::general_purpose::STANDARD};
+    let plain = format!("http://localhost:{}|{}", port, token);
+    STANDARD.encode(plain.as_bytes())
+}
+
 impl Config {
     fn is_configured(&self) -> bool {
         match self.storage_mode {
@@ -447,8 +454,9 @@ async fn run_private_vault_server(config: Config) {
         .with_state(state);
     
     let addr = SocketAddr::from(([0, 0, 0, 0], config.server_port));
+    let connection_token = generate_connection_token(config.server_port, &config.server_token);
     println!("🔐 Private Vault 서버 시작: http://localhost:{}", config.server_port);
-    println!("🔑 토큰: {}", config.server_token);
+    println!("🔑 연결 토큰: {}", connection_token);
     
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
     axum::serve(listener, app).await.unwrap();
@@ -758,20 +766,19 @@ fn run_cloud_tray_app(config: Config) {
 
 fn run_private_vault_tray_app(config: Config) {
     let event_loop = EventLoop::new();
+    let connection_token = generate_connection_token(config.server_port, &config.server_token);
     
     let menu = Menu::new();
     
     let mode_item = MenuItem::new("🔐 Private Vault 모드", false, None);
     let port_item = MenuItem::new(format!("🌐 http://localhost:{}", config.server_port), false, None);
-    let token_item = MenuItem::new(format!("🔑 {}", &config.server_token[..8.min(config.server_token.len())]), false, None);
     let path_item = MenuItem::new(format!("📁 {}", shorten_path(&config.local_path)), false, None);
     let folder_item = MenuItem::new("📂 폴더 열기", true, None);
-    let copy_token_item = MenuItem::new("📋 토큰 복사", true, None);
+    let copy_token_item = MenuItem::new("📋 연결 토큰 복사", true, None);
     let quit_item = MenuItem::new("종료", true, None);
     
     menu.append(&mode_item).ok();
     menu.append(&port_item).ok();
-    menu.append(&token_item).ok();
     menu.append(&path_item).ok();
     menu.append(&PredefinedMenuItem::separator()).ok();
     menu.append(&folder_item).ok();
@@ -798,6 +805,7 @@ fn run_private_vault_tray_app(config: Config) {
     });
     
     let config_for_menu = config.clone();
+    let connection_token_for_menu = connection_token.clone();
     let menu_receiver = MenuEvent::receiver();
     
     thread::spawn(move || {
@@ -815,7 +823,7 @@ fn run_private_vault_tray_app(config: Config) {
                             .and_then(|mut child| {
                                 use std::io::Write;
                                 if let Some(stdin) = child.stdin.as_mut() {
-                                    stdin.write_all(config_for_menu.server_token.as_bytes()).ok();
+                                    stdin.write_all(connection_token_for_menu.as_bytes()).ok();
                                 }
                                 child.wait()
                             })
@@ -824,11 +832,11 @@ fn run_private_vault_tray_app(config: Config) {
                     #[cfg(target_os = "windows")]
                     {
                         std::process::Command::new("cmd")
-                            .args(["/C", &format!("echo {}| clip", config_for_menu.server_token)])
+                            .args(["/C", &format!("echo {}| clip", connection_token_for_menu)])
                             .spawn()
                             .ok();
                     }
-                    println!("📋 토큰이 클립보드에 복사되었습니다");
+                    println!("📋 연결 토큰이 클립보드에 복사되었습니다");
                 } else if event.id == quit_id {
                     std::process::exit(0);
                 }
@@ -874,9 +882,10 @@ fn main() {
                 fs::create_dir_all(&config.local_path).ok();
                 config.save();
                 
+                let conn_token = generate_connection_token(config.server_port, &config.server_token);
                 println!("🔐 Private Vault 모드로 시작");
                 println!("📁 {}", config.local_path);
-                println!("🔑 토큰: {}", config.server_token);
+                println!("🔑 연결 토큰: {}", conn_token);
                 
                 run_private_vault_tray_app(config);
                 return;

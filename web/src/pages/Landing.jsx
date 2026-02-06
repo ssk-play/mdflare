@@ -5,10 +5,22 @@ import { loginWithGoogle } from '../firebase';
 export default function Landing({ user, username }) {
   const navigate = useNavigate();
   const [showPrivateVault, setShowPrivateVault] = useState(false);
-  const [serverUrl, setServerUrl] = useState('http://localhost:7779');
-  const [token, setToken] = useState('');
+  const [connectionToken, setConnectionToken] = useState('');
   const [connecting, setConnecting] = useState(false);
   const [error, setError] = useState('');
+
+  // 연결 토큰 파싱: base64(serverUrl|token) 또는 plain token
+  const parseConnectionToken = (input) => {
+    try {
+      const decoded = atob(input);
+      if (decoded.includes('|')) {
+        const [serverUrl, token] = decoded.split('|');
+        return { serverUrl, token };
+      }
+    } catch {}
+    // base64 아니면 기본 서버 + plain token
+    return { serverUrl: 'http://localhost:7779', token: input };
+  };
 
   const handleLogin = async () => {
     try {
@@ -30,6 +42,8 @@ export default function Landing({ user, username }) {
     setConnecting(true);
     
     try {
+      const { serverUrl, token } = parseConnectionToken(connectionToken.trim());
+      
       // 서버 연결 테스트
       const res = await fetch(`${serverUrl}/api/files`, {
         headers: token ? { 'Authorization': `Bearer ${token}` } : {}
@@ -47,7 +61,7 @@ export default function Landing({ user, username }) {
       // Private Vault 워크스페이스로 이동
       navigate('/local');
     } catch (err) {
-      setError('서버에 연결할 수 없습니다. 주소와 에이전트 실행 상태를 확인하세요.');
+      setError('연결 실패. 에이전트가 실행 중인지 확인하세요.');
     } finally {
       setConnecting(false);
     }
@@ -58,15 +72,10 @@ export default function Landing({ user, username }) {
       navigate(`/${username}`);
     }
     
-    // Private Vault 모드로 저장된 경우 자동 연결 시도
+    // Private Vault 모드로 저장된 경우 자동 연결
     const savedMode = localStorage.getItem('mdflare_mode');
     if (savedMode === 'private_vault') {
-      const savedUrl = localStorage.getItem('mdflare_server_url');
-      const savedToken = localStorage.getItem('mdflare_token');
-      if (savedUrl) {
-        setServerUrl(savedUrl);
-        setToken(savedToken || '');
-      }
+      navigate('/local');
     }
   }, [user, username, navigate]);
 
@@ -103,31 +112,18 @@ export default function Landing({ user, username }) {
         ) : (
           <div className="private-vault-form">
             <h3>🔐 Private Vault 연결</h3>
-            <p className="form-desc">에이전트에서 복사한 토큰을 입력하세요.</p>
+            <p className="form-desc">에이전트에서 복사한 연결 토큰을 붙여넣으세요.</p>
             
             <div className="form-group">
-              <label>토큰</label>
               <input
-                type="password"
-                value={token}
-                onChange={(e) => setToken(e.target.value)}
-                placeholder="에이전트에서 복사한 토큰"
+                type="text"
+                value={connectionToken}
+                onChange={(e) => setConnectionToken(e.target.value)}
+                placeholder="연결 토큰 붙여넣기"
                 autoFocus
+                className="token-input"
               />
             </div>
-            
-            <details className="advanced-settings">
-              <summary>고급 설정</summary>
-              <div className="form-group">
-                <label>서버 주소</label>
-                <input
-                  type="text"
-                  value={serverUrl}
-                  onChange={(e) => setServerUrl(e.target.value)}
-                  placeholder="http://localhost:7779"
-                />
-              </div>
-            </details>
             
             {error && <p className="form-error">{error}</p>}
             
