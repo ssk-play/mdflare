@@ -24,7 +24,7 @@ function buildPrivateVaultUrl(path) {
   const { serverUrl, useProxy } = getPrivateVaultConfig();
   if (useProxy) {
     const server = serverUrl.replace('http://', '').replace('https://', '');
-    return `/api/tunnel?server=${encodeURIComponent(server)}&path=${encodeURIComponent(path)}`;
+    return `/api/_tunnel?server=${encodeURIComponent(server)}&path=${encodeURIComponent(path)}`;
   }
   return `${serverUrl}${path}`;
 }
@@ -114,7 +114,7 @@ export default function Workspace({ user, isPrivateVault = false }) {
     if (isPrivateVault && pvConfig) {
       if (pvConfig.useProxy) {
         const server = pvConfig.serverUrl.replace('http://', '').replace('https://', '');
-        return `/api/tunnel?server=${encodeURIComponent(server)}&path=${encodeURIComponent('/api' + path)}`;
+        return `/api/_tunnel?server=${encodeURIComponent(server)}&path=${encodeURIComponent('/api' + path)}`;
       }
       return `${pvConfig.serverUrl}/api${path}`;
     }
