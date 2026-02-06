@@ -442,48 +442,51 @@ fn run_tray_app(config: Config) {
         }
     }
     
-    // 메뉴 이벤트 핸들러
-    let menu_channel = MenuEvent::receiver();
+    // 메뉴 이벤트를 별도 스레드에서 처리
     let config_for_menu = config.clone();
+    let menu_receiver = MenuEvent::receiver();
     
-    event_loop.run(move |_event, _, control_flow| {
-        *control_flow = ControlFlow::Poll;
-        
-        if let Ok(event) = menu_channel.try_recv() {
-            if event.id == sync_id {
-                if let Ok(mut eng) = engine_clone.lock() {
-                    eng.full_sync().ok();
-                }
-            } else if event.id == folder_id {
-                open::that(&config_for_menu.local_path).ok();
-            } else if event.id == change_folder_id {
-                // 새 폴더 선택
-                if let Some(new_path) = rfd::FileDialog::new()
-                    .set_title("새 동기화 폴더 선택")
-                    .set_directory(&config_for_menu.local_path)
-                    .pick_folder()
-                {
-                    let mut new_config = config_for_menu.clone();
-                    new_config.local_path = new_path.to_string_lossy().to_string();
-                    new_config.save();
-                    println!("📁 폴더 변경됨: {}", new_config.local_path);
-                    println!("⚠️ 변경 적용을 위해 앱을 재시작합니다...");
-                    
-                    // 앱 재시작
-                    if let Ok(exe) = std::env::current_exe() {
-                        std::process::Command::new(exe).spawn().ok();
+    thread::spawn(move || {
+        loop {
+            if let Ok(event) = menu_receiver.recv() {
+                if event.id == sync_id {
+                    if let Ok(mut eng) = engine_clone.lock() {
+                        eng.full_sync().ok();
                     }
-                    *control_flow = ControlFlow::Exit;
+                } else if event.id == folder_id {
+                    open::that(&config_for_menu.local_path).ok();
+                } else if event.id == change_folder_id {
+                    // 새 폴더 선택
+                    if let Some(new_path) = rfd::FileDialog::new()
+                        .set_title("새 동기화 폴더 선택")
+                        .set_directory(&config_for_menu.local_path)
+                        .pick_folder()
+                    {
+                        let mut new_config = config_for_menu.clone();
+                        new_config.local_path = new_path.to_string_lossy().to_string();
+                        new_config.save();
+                        println!("📁 폴더 변경됨: {}", new_config.local_path);
+                        println!("⚠️ 변경 적용을 위해 앱을 재시작합니다...");
+                        
+                        // 앱 재시작
+                        if let Ok(exe) = std::env::current_exe() {
+                            std::process::Command::new(exe).spawn().ok();
+                        }
+                        std::process::exit(0);
+                    }
+                } else if event.id == web_id {
+                    let url = format!("{}/{}", config_for_menu.api_base, config_for_menu.username);
+                    open::that(url).ok();
+                } else if event.id == quit_id {
+                    std::process::exit(0);
                 }
-            } else if event.id == web_id {
-                let url = format!("{}/{}", config_for_menu.api_base, config_for_menu.username);
-                open::that(url).ok();
-            } else if event.id == quit_id {
-                *control_flow = ControlFlow::Exit;
             }
         }
-        
-        thread::sleep(Duration::from_millis(100));
+    });
+    
+    // 이벤트 루프 (트레이 아이콘 유지용)
+    event_loop.run(move |_event, _, control_flow| {
+        *control_flow = ControlFlow::Wait;
     });
 }
 
