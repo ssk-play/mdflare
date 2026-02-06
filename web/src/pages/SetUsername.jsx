@@ -1,5 +1,6 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { getAppName } from '../components/AppTitle';
 
 const USERNAME_REGEX = /^[a-z0-9][a-z0-9-]{1,18}[a-z0-9]$/;
 
@@ -93,7 +94,7 @@ export default function SetUsername({ user }) {
   return (
     <div className="landing">
       <nav className="landing-nav">
-        <h1>🔥 MDFlare</h1>
+        <h1>🔥 {getAppName()}</h1>
       </nav>
 
       <div className="hero" style={{ maxWidth: 480 }}>

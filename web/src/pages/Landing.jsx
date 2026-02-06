@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { loginWithGoogle } from '../firebase';
+import { getAppName } from '../components/AppTitle';
 
 export default function Landing({ user, username }) {
   const navigate = useNavigate();
@@ -107,7 +108,7 @@ export default function Landing({ user, username }) {
   return (
     <div className="landing">
       <nav className="landing-nav">
-        <h1>🔥 MDFlare</h1>
+        <h1>🔥 {getAppName()}</h1>
         <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
           <button className="nav-link" onClick={() => navigate('/download')}>다운로드</button>
           <button className="login-btn" onClick={handleLogin}>로그인</button>
