@@ -13,7 +13,7 @@ MAIN_VERSION=$(cat "$VERSION_FILE" | tr -d '[:space:]')
 
 # 2. 빌드 넘버 증가
 BUILD=$(python3 -c "
-import json, sys
+import json
 f = '$BUILDS_FILE'
 d = json.load(open(f))
 d['mac'] = d.get('mac', 0) + 1
@@ -21,12 +21,12 @@ json.dump(d, open(f, 'w'))
 print(d['mac'])
 ")
 
-FULL_VERSION="$MAIN_VERSION.$BUILD"
+FULL_VERSION="$MAIN_VERSION+$BUILD"
 
-echo "📦 v$FULL_VERSION (main: $MAIN_VERSION, build: $BUILD)"
+echo "📦 v$FULL_VERSION"
 
-# 3. Cargo.toml 버전 동기화
-sed -i '' "s/^version = \".*\"/version = \"$FULL_VERSION\"/" "$CARGO_TOML"
+# 3. Cargo.toml 버전 동기화 (Cargo는 +meta 미지원, 메인 버전만)
+sed -i '' "s/^version = \".*\"/version = \"$MAIN_VERSION\"/" "$CARGO_TOML"
 
 # 4. 빌드
 echo "🔨 빌드 중..."
@@ -34,7 +34,7 @@ source "$HOME/.cargo/env" 2>/dev/null || true
 (cd "$ROOT_DIR/agent" && cargo build --release)
 
 BINARY="$ROOT_DIR/agent/target/release/mdflare-agent"
-ZIP="/tmp/MDFlare-Agent-${FULL_VERSION}-mac.zip"
+ZIP="/tmp/MDFlare-Agent-${MAIN_VERSION}+${BUILD}-mac.zip"
 
 # 5. zip 패키징
 zip -j "$ZIP" "$BINARY"
@@ -43,10 +43,10 @@ SIZE=$(du -h "$ZIP" | cut -f1 | xargs)
 echo "📤 업로드 중... ($SIZE)"
 
 # 6. Firebase Storage 업로드
-gsutil cp "$ZIP" "$BUCKET/MDFlare-Agent-${FULL_VERSION}-mac.zip"
+gsutil cp "$ZIP" "$BUCKET/MDFlare-Agent-${MAIN_VERSION}+${BUILD}-mac.zip"
 
 # 7. meta.json 업데이트
-echo "{\"version\":\"$FULL_VERSION\",\"size\":\"$SIZE\",\"date\":\"$(date +%Y-%m-%d)\"}" | \
+echo "{\"version\":\"$MAIN_VERSION\",\"build\":$BUILD,\"size\":\"$SIZE\",\"date\":\"$(date +%Y-%m-%d)\"}" | \
   gsutil -h "Content-Type:application/json" cp - "$BUCKET/meta.json"
 
 # 정리
@@ -54,4 +54,4 @@ rm -f "$ZIP"
 
 echo ""
 echo "✅ v$FULL_VERSION 배포 완료"
-echo "   $BUCKET/MDFlare-Agent-${FULL_VERSION}-mac.zip"
+echo "   $BUCKET/MDFlare-Agent-${MAIN_VERSION}+${BUILD}-mac.zip"

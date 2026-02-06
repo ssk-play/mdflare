@@ -4,8 +4,8 @@ import { getAppName } from '../components/AppTitle';
 
 const STORAGE_BASE = 'https://firebasestorage.googleapis.com/v0/b/markdownflare.firebasestorage.app/o';
 const META_URL = `${STORAGE_BASE}/downloads%2Fmac%2Fmeta.json?alt=media`;
-const downloadUrl = (version) =>
-  `${STORAGE_BASE}/downloads%2Fmac%2FMDFlare-Agent-${version}-mac.zip?alt=media`;
+const downloadUrl = (meta) =>
+  `${STORAGE_BASE}/downloads%2Fmac%2FMDFlare-Agent-${meta.version}%2B${meta.build}-mac.zip?alt=media`;
 
 export default function Download() {
   const navigate = useNavigate();
@@ -38,13 +38,13 @@ export default function Download() {
           <h3>macOS</h3>
           <p>Apple Silicon & Intel 지원</p>
           <a
-            href={macMeta ? downloadUrl(macMeta.version) : '#'}
+            href={macMeta ? downloadUrl(macMeta) : '#'}
             className="cta-btn"
             style={{ textDecoration: 'none', display: 'inline-block' }}
           >
             다운로드{macMeta ? ` (${macMeta.size})` : ''}
           </a>
-          <span className="download-note">Rust 네이티브 · 시스템 트레이{macMeta ? ` · v${macMeta.version}` : ''}</span>
+          <span className="download-note">Rust 네이티브 · 시스템 트레이{macMeta ? ` · v${macMeta.version}+${macMeta.build}` : ''}</span>
           <span className="download-note" style={{ marginTop: 4 }}>zip 해제 후 실행</span>
         </div>
 
