@@ -1358,3 +1358,107 @@ body.light-mode .recent-item:hover { background: #eaeef2; color: #0969da; }
   opacity: 0.4;
   cursor: not-allowed;
 }
+
+/* Private Vault Form */
+.mode-buttons {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.cta-btn.secondary {
+  background: transparent;
+  border: 1px solid #30363d;
+  color: #e6edf3;
+}
+
+.cta-btn.secondary:hover {
+  background: #21262d;
+  border-color: #8b949e;
+}
+
+.private-vault-form {
+  background: #161b22;
+  border: 1px solid #30363d;
+  border-radius: 12px;
+  padding: 24px;
+  max-width: 400px;
+  margin: 0 auto;
+  text-align: left;
+}
+
+.private-vault-form h3 {
+  margin-bottom: 8px;
+  font-size: 18px;
+}
+
+.private-vault-form .form-desc {
+  color: #8b949e;
+  font-size: 14px;
+  margin-bottom: 20px;
+}
+
+.private-vault-form .form-group {
+  margin-bottom: 16px;
+}
+
+.private-vault-form label {
+  display: block;
+  font-size: 13px;
+  color: #8b949e;
+  margin-bottom: 6px;
+}
+
+.private-vault-form input {
+  width: 100%;
+  padding: 10px 12px;
+  background: #0d1117;
+  border: 1px solid #30363d;
+  border-radius: 6px;
+  color: #e6edf3;
+  font-size: 14px;
+}
+
+.private-vault-form input:focus {
+  outline: none;
+  border-color: #58a6ff;
+}
+
+.private-vault-form .form-error {
+  color: #f85149;
+  font-size: 13px;
+  margin-bottom: 16px;
+}
+
+.private-vault-form .form-buttons {
+  display: flex;
+  gap: 10px;
+}
+
+.private-vault-form .form-buttons .cta-btn {
+  flex: 1;
+  padding: 10px 16px;
+  font-size: 14px;
+}
+
+/* Light mode for Private Vault form */
+body.light-mode .private-vault-form {
+  background: #f6f8fa;
+  border-color: #d0d7de;
+}
+
+body.light-mode .private-vault-form input {
+  background: #ffffff;
+  border-color: #d0d7de;
+  color: #24292f;
+}
+
+body.light-mode .cta-btn.secondary {
+  border-color: #d0d7de;
+  color: #24292f;
+}
+
+body.light-mode .cta-btn.secondary:hover {
+  background: #f3f4f6;
+}

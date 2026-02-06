@@ -10,13 +10,27 @@ import { updateFileMeta, onFilesChanged, simpleHash, logout, auth } from '../fir
 const API = '/api';
 const AUTO_SAVE_DELAY = 1000;
 
+// Private Vault 설정 가져오기
+function getPrivateVaultConfig() {
+  return {
+    serverUrl: localStorage.getItem('mdflare_server_url') || 'http://localhost:7779',
+    token: localStorage.getItem('mdflare_token') || '',
+  };
+}
+
 // API 경로 인코딩 헬퍼 (한글 등 유니코드 지원, / 유지)
 const encodePath = (p) => p.split('/').map(s => encodeURIComponent(s)).join('/');
 
 // 인증 헤더 생성 헬퍼 (비동기 - ID Token 사용)
-async function authHeaders() {
+async function authHeaders(isPrivateVault = false) {
   const headers = { 'Content-Type': 'application/json' };
-  if (auth.currentUser) {
+  
+  if (isPrivateVault) {
+    const { token } = getPrivateVaultConfig();
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+  } else if (auth.currentUser) {
     try {
       const idToken = await auth.currentUser.getIdToken();
       headers['Authorization'] = `Bearer ${idToken}`;
@@ -25,6 +39,15 @@ async function authHeaders() {
     }
   }
   return headers;
+}
+
+// API base URL 가져오기
+function getApiBase(isPrivateVault = false) {
+  if (isPrivateVault) {
+    const { serverUrl } = getPrivateVaultConfig();
+    return serverUrl;
+  }
+  return '';
 }
 
 const darkTheme = EditorView.theme({
@@ -63,9 +86,14 @@ function Toast({ toasts, onRemove }) {
   );
 }
 
-export default function Workspace({ user }) {
-  const { userId, '*': filePath } = useParams();
+export default function Workspace({ user, isPrivateVault = false }) {
+  const { userId: paramUserId, '*': filePath } = useParams();
   const navigate = useNavigate();
+  
+  // Private Vault 모드에서는 userId가 필요 없음
+  const apiBase = getApiBase(isPrivateVault);
+  const userId = isPrivateVault ? '' : paramUserId;
+  const apiPath = isPrivateVault ? `${apiBase}/api` : `${apiPath}`;
 
   const [files, setFiles] = useState([]);
   const [currentFile, setCurrentFile] = useState(null);
@@ -117,8 +145,8 @@ export default function Workspace({ user }) {
   // 파일 트리 로드
   const loadFiles = useCallback(async () => {
     try {
-      const headers = await authHeaders();
-      const r = await fetch(`${API}/${userId}/files`, { headers });
+      const headers = await authHeaders(isPrivateVault);
+      const r = await fetch(`${apiPath}/files`, { headers });
       const data = await r.json();
       setFiles(sortFiles(data.files || []));
     } catch (err) {
@@ -139,8 +167,8 @@ export default function Workspace({ user }) {
       setSaveStatus('idle');
       (async () => {
         try {
-          const headers = await authHeaders();
-          const r = await fetch(`${API}/${userId}/file/${encodePath(fp)}`, { headers });
+          const headers = await authHeaders(isPrivateVault);
+          const r = await fetch(`${apiPath}/file/${encodePath(fp)}`, { headers });
           const data = await r.json();
           if (!data.error) {
             setCurrentFile(data);
@@ -174,8 +202,8 @@ export default function Workspace({ user }) {
         const changed = changedFiles.find(f => f.path === currentFile.path);
         if (changed && changed.hash !== simpleHash(content)) {
           try {
-            const headers = await authHeaders();
-            const r = await fetch(`${API}/${userId}/file/${encodePath(currentFile.path)}`, { headers });
+            const headers = await authHeaders(isPrivateVault);
+            const r = await fetch(`${apiPath}/file/${encodePath(currentFile.path)}`, { headers });
             const data = await r.json();
             setContent(data.content);
             setSavedContent(data.content);
@@ -204,9 +232,9 @@ export default function Workspace({ user }) {
   const doSave = useCallback(async (fp, newContent) => {
     setSaveStatus('saving');
     try {
-      const res = await fetch(`${API}/${userId}/file/${encodePath(fp)}`, {
+      const res = await fetch(`${apiPath}/file/${encodePath(fp)}`, {
         method: 'PUT',
-        headers: await authHeaders(),
+        headers: await authHeaders(isPrivateVault),
         body: JSON.stringify({ content: newContent })
       });
       const data = await res.json();
@@ -281,9 +309,9 @@ export default function Workspace({ user }) {
     const tid = addToast(`📄 "${fileName}" 생성 중...`, 'loading');
     setSidebarLoading(true);
     try {
-      await fetch(`${API}/${userId}/file/${encodePath(fp)}`, {
+      await fetch(`${apiPath}/file/${encodePath(fp)}`, {
         method: 'PUT',
-        headers: await authHeaders(),
+        headers: await authHeaders(isPrivateVault),
         body: JSON.stringify({ content: `# ${name.replace('.md', '')}\n\n` })
       });
       await loadFiles();
@@ -311,9 +339,9 @@ export default function Workspace({ user }) {
     ];
     try {
       for (const s of samples) {
-        await fetch(`${API}/${userId}/file/${encodePath(s.path)}`, {
+        await fetch(`${apiPath}/file/${encodePath(s.path)}`, {
           method: 'PUT',
-          headers: await authHeaders(),
+          headers: await authHeaders(isPrivateVault),
           body: JSON.stringify({ content: s.content })
         });
       }
@@ -342,9 +370,9 @@ export default function Workspace({ user }) {
     const tid = addToast(`📦 "${name}" 이동 중...`, 'loading');
     setSidebarLoading(true);
     try {
-      await fetch(`${API}/${userId}/rename`, {
+      await fetch(`${apiPath}/rename`, {
         method: 'POST',
-        headers: await authHeaders(),
+        headers: await authHeaders(isPrivateVault),
         body: JSON.stringify({ oldPath: sourcePath, newPath })
       });
       await loadFiles();
@@ -370,9 +398,9 @@ export default function Workspace({ user }) {
     const tid = addToast(`📁 "${name}" 폴더 생성 중...`, 'loading');
     setSidebarLoading(true);
     try {
-      await fetch(`${API}/${userId}/file/${encodePath(fp)}`, {
+      await fetch(`${apiPath}/file/${encodePath(fp)}`, {
         method: 'PUT',
-        headers: await authHeaders(),
+        headers: await authHeaders(isPrivateVault),
         body: JSON.stringify({ content: '' })
       });
       await loadFiles();
@@ -394,9 +422,9 @@ export default function Workspace({ user }) {
     const tid = addToast(`✏️ "${oldName}" → "${newName}" 변경 중...`, 'loading');
     setSidebarLoading(true);
     try {
-      await fetch(`${API}/${userId}/rename`, {
+      await fetch(`${apiPath}/rename`, {
         method: 'POST',
-        headers: await authHeaders(),
+        headers: await authHeaders(isPrivateVault),
         body: JSON.stringify({ oldPath, newPath })
       });
       await loadFiles();
@@ -418,7 +446,7 @@ export default function Workspace({ user }) {
     setSidebarLoading(true);
     try {
       const folderQuery = isFolder ? '?folder=true' : '';
-      await fetch(`${API}/${userId}/file/${encodePath(fp)}${folderQuery}`, { method: 'DELETE', headers: await authHeaders() });
+      await fetch(`${apiPath}/file/${encodePath(fp)}${folderQuery}`, { method: 'DELETE', headers: await authHeaders(isPrivateVault) });
       await loadFiles();
       updateToast(tid, `🗑️ "${name}" ${label} 삭제 완료`, 'success');
       if (currentFile?.path === fp || (isFolder && currentFile?.path?.startsWith(fp + '/'))) {
@@ -437,14 +465,14 @@ export default function Workspace({ user }) {
     const tid = addToast(`📋 "${fileName}" 복제 중...`, 'loading');
     setSidebarLoading(true);
     try {
-      const headers = await authHeaders();
-      const res = await fetch(`${API}/${userId}/file/${encodePath(fp)}`, { headers });
+      const headers = await authHeaders(isPrivateVault);
+      const res = await fetch(`${apiPath}/file/${encodePath(fp)}`, { headers });
       const data = await res.json();
       const ext = fp.lastIndexOf('.md');
       const newPath = ext > 0 ? `${fp.slice(0, ext)} (copy).md` : `${fp} (copy)`;
-      await fetch(`${API}/${userId}/file/${encodePath(newPath)}`, {
+      await fetch(`${apiPath}/file/${encodePath(newPath)}`, {
         method: 'PUT',
-        headers: await authHeaders(),
+        headers: await authHeaders(isPrivateVault),
         body: JSON.stringify({ content: data.content })
       });
       await loadFiles();
@@ -474,7 +502,7 @@ export default function Workspace({ user }) {
     if (!confirm('API 토큰을 생성하시겠습니까?\n기존 토큰은 무효화됩니다.')) return;
     const tid = addToast('🔑 토큰 생성 중...', 'loading');
     try {
-      const headers = await authHeaders();
+      const headers = await authHeaders(isPrivateVault);
       const res = await fetch('/api/token/generate', {
         method: 'POST',
         headers,
@@ -720,9 +748,9 @@ export default function Workspace({ user }) {
                     const text = await file.text();
                     const targetFolder = focusedFolder || '';
                     const fp = targetFolder ? `${targetFolder}/${file.name}` : file.name;
-                    await fetch(`${API}/${userId}/file/${encodePath(fp)}`, {
+                    await fetch(`${apiPath}/file/${encodePath(fp)}`, {
                       method: 'PUT',
-                      headers: await authHeaders(),
+                      headers: await authHeaders(isPrivateVault),
                       body: JSON.stringify({ content: text })
                     });
                   }
