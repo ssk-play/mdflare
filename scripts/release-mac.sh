@@ -6,6 +6,12 @@ ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 VERSION=$(cat "$ROOT_DIR/VERSION" | tr -d '[:space:]')
 BUCKET="gs://markdownflare.firebasestorage.app/downloads/mac"
 
+# gsutil 체크
+if ! command -v gsutil &> /dev/null; then
+  echo "❌ gsutil 필요: brew install google-cloud-sdk"
+  exit 1
+fi
+
 echo "📦 v$VERSION 빌드 시작"
 
 # 1. 빌드
