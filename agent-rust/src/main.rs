@@ -478,32 +478,37 @@ async fn run_private_vault_server(config: Config) {
     axum::serve(listener, app).await.unwrap();
 }
 
-// localtunnel 터널 시작
+// cloudflared Quick Tunnel 시작
 async fn start_tunnel(local_port: u16, token: &str) -> Result<(String, String), Box<dyn std::error::Error + Send + Sync>> {
     use std::process::Stdio;
     use tokio::process::Command;
     use tokio::io::{BufReader, AsyncBufReadExt};
     
-    let mut child = Command::new("npx")
-        .args(["localtunnel", "--port", &local_port.to_string()])
+    let mut child = Command::new("cloudflared")
+        .args(["tunnel", "--url", &format!("http://localhost:{}", local_port)])
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()?;
     
-    let stdout = child.stdout.take().ok_or("stdout 없음")?;
-    let mut reader = BufReader::new(stdout).lines();
+    let stderr = child.stderr.take().ok_or("stderr 없음")?;
+    let mut reader = BufReader::new(stderr).lines();
     
-    // URL 파싱 (your url is: https://xxx.loca.lt)
+    // URL 파싱 (stderr에서 trycloudflare.com URL 찾기)
     let url = loop {
         if let Some(line) = reader.next_line().await? {
-            if line.contains("your url is:") {
-                let url = line.split("your url is:").nth(1)
-                    .map(|s| s.trim().to_string())
-                    .ok_or("URL 파싱 실패")?;
-                break url;
+            if line.contains("trycloudflare.com") {
+                // URL 추출: https://xxx.trycloudflare.com
+                if let Some(start) = line.find("https://") {
+                    let url_part = &line[start..];
+                    if let Some(end) = url_part.find(|c: char| c.is_whitespace() || c == '|') {
+                        break url_part[..end].to_string();
+                    } else {
+                        break url_part.trim().to_string();
+                    }
+                }
             }
         } else {
-            return Err("localtunnel URL을 받지 못함".into());
+            return Err("cloudflared URL을 받지 못함".into());
         }
     };
     
