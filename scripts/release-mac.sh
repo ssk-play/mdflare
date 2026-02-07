@@ -1,5 +1,5 @@
 #!/bin/bash
-# macOS 에이전트: 빌드 → Firebase Storage 배포
+# macOS 에이전트: 빌드 → .app 번들 → Firebase Storage 배포
 set -e
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
@@ -20,23 +20,35 @@ source "$HOME/.cargo/env" 2>/dev/null || true
 (cd "$ROOT_DIR/agent" && cargo build --release)
 
 BINARY="$ROOT_DIR/agent/target/release/mdflare-agent"
+APP_DIR="/tmp/MDFlare Agent.app"
 ZIP="/tmp/MDFlare-Agent-${VERSION}-mac.zip"
 
-# 2. zip 패키징
-zip -j "$ZIP" "$BINARY" "$ROOT_DIR/agent/install.command"
+# 2. .app 번들 생성
+echo "📁 .app 번들 생성 중..."
+rm -rf "$APP_DIR"
+mkdir -p "$APP_DIR/Contents/MacOS"
+
+# Info.plist 복사 + 버전 업데이트
+sed -e "s/<string>1\.0\.5</<string>$VERSION</" \
+  "$ROOT_DIR/agent/macos/Info.plist" > "$APP_DIR/Contents/Info.plist"
+
+cp "$BINARY" "$APP_DIR/Contents/MacOS/mdflare-agent"
+
+# 3. zip 패키징
+(cd /tmp && zip -r "$ZIP" "MDFlare Agent.app")
 SIZE=$(du -h "$ZIP" | cut -f1 | xargs)
 
 echo "📤 업로드 중... ($SIZE)"
 
-# 3. Firebase Storage 업로드
+# 4. Firebase Storage 업로드
 gsutil cp "$ZIP" "$BUCKET/MDFlare-Agent-${VERSION}-mac.zip"
 
-# 4. meta.json 업데이트
+# 5. meta.json 업데이트
 echo "{\"version\":\"$VERSION\",\"size\":\"$SIZE\",\"date\":\"$(date +%Y-%m-%d)\"}" | \
   gsutil -h "Content-Type:application/json" cp - "$BUCKET/meta.json"
 
 # 정리
-rm -f "$ZIP"
+rm -rf "$APP_DIR" "$ZIP"
 
 echo ""
 echo "✅ v$VERSION 배포 완료"

@@ -17,6 +17,7 @@ use muda::{Menu, MenuEvent, MenuItem, PredefinedMenuItem};
 use notify::RecursiveMode;
 use notify_debouncer_mini::{new_debouncer, DebouncedEventKind};
 use serde::{Deserialize, Serialize};
+use tao::event::Event;
 use tao::event_loop::{ControlFlow, EventLoop};
 use tower_http::cors::{Any, CorsLayer};
 use tray_icon::{Icon, TrayIconBuilder};
@@ -60,10 +61,12 @@ struct Config {
 
 impl Default for Config {
     fn default() -> Self {
+        let api_base = std::env::var("MDFLARE_API_BASE")
+            .unwrap_or_else(|_| "https://mdflare.com".to_string());
         Self {
             storage_mode: StorageMode::Cloud,
             local_path: String::new(),
-            api_base: "https://mdflare.com".to_string(),
+            api_base,
             username: String::new(),
             api_token: String::new(),
             server_port: 7779,
@@ -107,11 +110,16 @@ impl Config {
 
     fn load() -> Self {
         let path = Self::config_path();
-        if let Ok(data) = fs::read_to_string(&path) {
+        let mut config = if let Ok(data) = fs::read_to_string(&path) {
             serde_json::from_str(&data).unwrap_or_default()
         } else {
             Self::default()
+        };
+        // 환경변수가 있으면 항상 우선
+        if let Ok(base) = std::env::var("MDFLARE_API_BASE") {
+            config.api_base = base;
         }
+        config
     }
 
     fn save(&self) {
@@ -722,12 +730,74 @@ fn parse_oauth_callback(url_str: &str) -> Option<(String, String)> {
     if url.host_str() != Some("callback") {
         return None;
     }
-    
+
     let params: HashMap<_, _> = url.query_pairs().collect();
     let username = params.get("username")?.to_string();
     let token = params.get("token")?.to_string();
-    
+
     Some((username, token))
+}
+
+fn log_to_file(msg: &str) {
+    use std::io::Write;
+    let log_path = dirs::document_dir()
+        .map(|d| d.join("mdflare-agent.log"))
+        .unwrap_or_else(|| PathBuf::from("/tmp/mdflare-agent.log"));
+    if let Ok(mut f) = fs::OpenOptions::new().create(true).append(true).open(&log_path) {
+        let now = chrono::Local::now().format("%H:%M:%S%.3f");
+        writeln!(f, "[{}] {}", now, msg).ok();
+    }
+}
+
+fn handle_url_callback(url: &str) -> bool {
+    log_to_file(&format!("handle_url_callback: {}", url));
+
+    if !url.starts_with("mdflare://") {
+        log_to_file("  → not mdflare:// scheme, skip");
+        return false;
+    }
+    if let Some((username, token)) = parse_oauth_callback(url) {
+        // 이미 같은 토큰이 저장되어 있으면 스킵 (재시작 시 URL 재전달 방지)
+        let existing = Config::load();
+        log_to_file(&format!("  → existing token: [{}...]", &existing.api_token.get(..16).unwrap_or("empty")));
+        log_to_file(&format!("  → new token:      [{}...]", &token.get(..16).unwrap_or("empty")));
+
+        if existing.api_token == token {
+            log_to_file("  → SKIP: same token already saved");
+            return true;
+        }
+
+        log_to_file(&format!("  → login success: {}", username));
+
+        let mut config = existing;
+        config.storage_mode = StorageMode::Cloud;
+        config.username = username;
+        config.api_token = token;
+
+        if config.local_path.is_empty() {
+            config.local_path = dirs::document_dir()
+                .map(|d| d.join("MDFlare"))
+                .unwrap_or_default()
+                .to_string_lossy()
+                .to_string();
+        }
+
+        fs::create_dir_all(&config.local_path).ok();
+        config.save();
+        log_to_file(&format!("  → config saved: {} ({})", config.username, config.local_path));
+
+        // 2초 딜레이 후 재시작 (URL 재전달 방지)
+        log_to_file("  → scheduling delayed restart");
+        std::process::Command::new("sh")
+            .args(["-c", "sleep 2 && open -a 'MDFlare Agent'"])
+            .spawn()
+            .ok();
+
+        log_to_file("  → exiting");
+        std::process::exit(0);
+    }
+    log_to_file("  → parse_oauth_callback returned None");
+    false
 }
 
 #[cfg(windows)]
@@ -870,8 +940,13 @@ fn run_cloud_tray_app(config: Config) {
         }
     });
     
-    event_loop.run(move |_event, _, control_flow| {
+    event_loop.run(move |event, _, control_flow| {
         *control_flow = ControlFlow::Wait;
+        if let Event::Opened { urls } = event {
+            for url in urls {
+                handle_url_callback(url.as_str());
+            }
+        }
     });
 }
 
@@ -959,8 +1034,222 @@ fn run_private_vault_tray_app(config: Config) {
         }
     });
     
-    event_loop.run(move |_event, _, control_flow| {
+    event_loop.run(move |event, _, control_flow| {
         *control_flow = ControlFlow::Wait;
+        if let Event::Opened { urls } = event {
+            for url in urls {
+                handle_url_callback(url.as_str());
+            }
+        }
+    });
+}
+
+// ============================================================================
+// Setup Tray App (미설정 상태)
+// ============================================================================
+
+fn build_cloud_menu(config: &Config) -> (Menu, muda::MenuId, muda::MenuId, muda::MenuId, muda::MenuId) {
+    let menu = Menu::new();
+    let mode_item = MenuItem::new("☁️ Cloud 모드", false, None);
+    let user_item = MenuItem::new(format!("👤 {}", config.username), false, None);
+    let path_item = MenuItem::new(format!("📁 {}", shorten_path(&config.local_path)), false, None);
+    let sync_item = MenuItem::new("🔄 지금 동기화", true, None);
+    let folder_item = MenuItem::new("📂 폴더 열기", true, None);
+    let web_item = MenuItem::new("🌐 웹에서 열기", true, None);
+    let quit_item = MenuItem::new("종료", true, None);
+
+    let sync_id = sync_item.id().clone();
+    let folder_id = folder_item.id().clone();
+    let web_id = web_item.id().clone();
+    let quit_id = quit_item.id().clone();
+
+    menu.append(&mode_item).ok();
+    menu.append(&user_item).ok();
+    menu.append(&path_item).ok();
+    menu.append(&PredefinedMenuItem::separator()).ok();
+    menu.append(&sync_item).ok();
+    menu.append(&folder_item).ok();
+    menu.append(&web_item).ok();
+    menu.append(&PredefinedMenuItem::separator()).ok();
+    menu.append(&quit_item).ok();
+
+    (menu, sync_id, folder_id, web_id, quit_id)
+}
+
+fn start_cloud_sync(config: &Config) -> Arc<Mutex<SyncEngine>> {
+    let engine = Arc::new(Mutex::new(SyncEngine::new(config)));
+    let local_path = config.local_path.clone();
+
+    // 파일 감시
+    let engine_watcher = engine.clone();
+    let watch_path = local_path.clone();
+    thread::spawn(move || {
+        let (tx, rx) = std::sync::mpsc::channel();
+        let mut debouncer = new_debouncer(Duration::from_secs(1), tx).unwrap();
+        debouncer.watcher().watch(Path::new(&watch_path), RecursiveMode::Recursive).ok();
+        for events in rx.iter().flatten() {
+            for event in events {
+                if event.kind == DebouncedEventKind::Any {
+                    if event.path.extension().map_or(false, |e| e == "md") {
+                        if let Ok(mut eng) = engine_watcher.lock() {
+                            eng.handle_local_change(&event.path);
+                        }
+                    }
+                }
+            }
+        }
+    });
+
+    // 주기적 동기화
+    let engine_timer = engine.clone();
+    thread::spawn(move || {
+        loop {
+            thread::sleep(Duration::from_secs(30));
+            if let Ok(mut eng) = engine_timer.lock() {
+                eng.full_sync().ok();
+            }
+        }
+    });
+
+    // 초기 동기화
+    if let Ok(mut eng) = engine.lock() {
+        match eng.full_sync() {
+            Ok((d, u)) => println!("✅ 초기 동기화 완료: ⬇️{} ⬆️{}", d, u),
+            Err(e) => eprintln!("❌ 동기화 실패: {}", e),
+        }
+    }
+
+    engine
+}
+
+fn run_setup_tray_app() {
+    let event_loop = EventLoop::new();
+
+    let menu = Menu::new();
+    let status_item = MenuItem::new("⚙️ 로그인 대기 중...", false, None);
+    let login_item = MenuItem::new("🔐 브라우저에서 로그인", true, None);
+    let quit_item = MenuItem::new("종료", true, None);
+
+    menu.append(&status_item).ok();
+    menu.append(&PredefinedMenuItem::separator()).ok();
+    menu.append(&login_item).ok();
+    menu.append(&PredefinedMenuItem::separator()).ok();
+    menu.append(&quit_item).ok();
+
+    let login_id = login_item.id().clone();
+    let quit_id = quit_item.id().clone();
+
+    let tray = TrayIconBuilder::new()
+        .with_menu(Box::new(menu))
+        .with_tooltip("MDFlare Agent (설정 필요)")
+        .with_icon(load_icon())
+        .build()
+        .expect("Failed to create tray icon");
+
+    // 상태 공유: 콜백 후 cloud 모드 전환 정보
+    let transitioned = Arc::new(Mutex::new(false));
+    let cloud_state: Arc<Mutex<Option<(Config, Arc<Mutex<SyncEngine>>)>>> = Arc::new(Mutex::new(None));
+    let cloud_menu_ids: Arc<Mutex<Option<(muda::MenuId, muda::MenuId, muda::MenuId, muda::MenuId)>>> = Arc::new(Mutex::new(None));
+
+    let tray = std::cell::RefCell::new(tray);
+    let transitioned_loop = transitioned.clone();
+    let cloud_state_loop = cloud_state.clone();
+    let cloud_menu_ids_loop = cloud_menu_ids.clone();
+
+    let menu_receiver = MenuEvent::receiver();
+    let transitioned_menu = transitioned.clone();
+    let cloud_state_menu = cloud_state.clone();
+    let cloud_menu_ids_menu = cloud_menu_ids.clone();
+
+    thread::spawn(move || {
+        loop {
+            if let Ok(event) = menu_receiver.recv() {
+                let is_cloud = *transitioned_menu.lock().unwrap();
+
+                if !is_cloud {
+                    // Setup 모드 메뉴
+                    if event.id == login_id {
+                        let config = Config::load();
+                        let auth_url = format!("{}/auth/agent", config.api_base);
+                        open::that(&auth_url).ok();
+                    } else if event.id == quit_id {
+                        std::process::exit(0);
+                    }
+                } else {
+                    // Cloud 모드 메뉴
+                    if let Some((sync_id, folder_id, web_id, quit_id)) = cloud_menu_ids_menu.lock().unwrap().as_ref() {
+                        if &event.id == quit_id {
+                            std::process::exit(0);
+                        } else if &event.id == sync_id {
+                            if let Some((_, engine)) = cloud_state_menu.lock().unwrap().as_ref() {
+                                if let Ok(mut eng) = engine.lock() {
+                                    eng.full_sync().ok();
+                                }
+                            }
+                        } else if &event.id == folder_id {
+                            if let Some((config, _)) = cloud_state_menu.lock().unwrap().as_ref() {
+                                open::that(&config.local_path).ok();
+                            }
+                        } else if &event.id == web_id {
+                            if let Some((config, _)) = cloud_state_menu.lock().unwrap().as_ref() {
+                                let url = format!("{}/{}", config.api_base, config.username);
+                                open::that(url).ok();
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    });
+
+    event_loop.run(move |event, _, control_flow| {
+        *control_flow = ControlFlow::Wait;
+
+        if let Event::Opened { urls } = event {
+            for url in urls {
+                let url_str = url.as_str();
+                if !url_str.starts_with("mdflare://") {
+                    continue;
+                }
+                log_to_file(&format!("setup_tray: received URL {}", url_str));
+
+                if let Some((username, token)) = parse_oauth_callback(url_str) {
+                    let existing = Config::load();
+                    if existing.api_token == token {
+                        log_to_file("setup_tray: duplicate token, skip");
+                        continue;
+                    }
+
+                    let mut config = existing;
+                    config.storage_mode = StorageMode::Cloud;
+                    config.username = username;
+                    config.api_token = token;
+                    if config.local_path.is_empty() {
+                        config.local_path = dirs::document_dir()
+                            .map(|d| d.join("MDFlare"))
+                            .unwrap_or_default()
+                            .to_string_lossy()
+                            .to_string();
+                    }
+                    fs::create_dir_all(&config.local_path).ok();
+                    config.save();
+
+                    log_to_file(&format!("setup_tray: logged in as {} → switching to cloud tray", config.username));
+
+                    // 트레이 메뉴를 Cloud 모드로 교체
+                    let (cloud_menu, sync_id, folder_id, web_id, quit_id) = build_cloud_menu(&config);
+                    tray.borrow_mut().set_menu(Some(Box::new(cloud_menu)));
+                    tray.borrow_mut().set_tooltip(Some(&format!("MDFlare Agent (☁️ {})", config.username)));
+
+                    // 동기화 엔진 시작
+                    let engine = start_cloud_sync(&config);
+
+                    *cloud_state_loop.lock().unwrap() = Some((config, engine));
+                    *cloud_menu_ids_loop.lock().unwrap() = Some((sync_id, folder_id, web_id, quit_id));
+                    *transitioned_loop.lock().unwrap() = true;
+                }
+            }
+        }
     });
 }
 
@@ -968,41 +1257,52 @@ fn run_private_vault_tray_app(config: Config) {
 // Main
 // ============================================================================
 
+fn pick_folder(title: &str) -> String {
+    let default_path = dirs::document_dir()
+        .map(|d| d.join("MDFlare"))
+        .unwrap_or_default();
+
+    rfd::FileDialog::new()
+        .set_title(title)
+        .set_directory(&default_path)
+        .pick_folder()
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_else(|| default_path.to_string_lossy().to_string())
+}
+
+fn setup_private_vault(mut config: Config) {
+    config.storage_mode = StorageMode::PrivateVault;
+    config.local_path = pick_folder("Private Vault 폴더 선택");
+    fs::create_dir_all(&config.local_path).ok();
+    config.save();
+
+    let conn_token = generate_connection_token(config.server_port, &config.server_token);
+    println!("🔐 Private Vault 모드");
+    println!("📁 {}", config.local_path);
+    println!("🔑 연결 토큰: {}", conn_token);
+
+    run_private_vault_tray_app(config);
+}
+
+fn setup_cloud(config: Config) {
+    let auth_url = format!("{}/auth/agent", config.api_base);
+    println!("⚙️ Cloud 모드 - 브라우저에서 로그인하세요");
+    println!("🌐 {}", auth_url);
+    open::that(&auth_url).ok();
+    run_setup_tray_app();
+}
+
 fn main() {
     env_logger::init();
-    
+
     let args: Vec<String> = std::env::args().collect();
-    
-    // 커맨드라인 모드 변경
+
+    // CLI 인자 처리
     if args.len() > 1 {
         match args[1].as_str() {
             "--private-vault" | "-p" => {
-                let mut config = Config::load();
-                config.storage_mode = StorageMode::PrivateVault;
-                
-                // 폴더 선택
-                if config.local_path.is_empty() {
-                    let default_path = dirs::document_dir()
-                        .map(|d| d.join("MDFlare"))
-                        .unwrap_or_default();
-                    
-                    config.local_path = rfd::FileDialog::new()
-                        .set_title("Private Vault 폴더 선택")
-                        .set_directory(&default_path)
-                        .pick_folder()
-                        .map(|p| p.to_string_lossy().to_string())
-                        .unwrap_or_else(|| default_path.to_string_lossy().to_string());
-                }
-                
-                fs::create_dir_all(&config.local_path).ok();
-                config.save();
-                
-                let conn_token = generate_connection_token(config.server_port, &config.server_token);
-                println!("🔐 Private Vault 모드로 시작");
-                println!("📁 {}", config.local_path);
-                println!("🔑 연결 토큰: {}", conn_token);
-                
-                run_private_vault_tray_app(config);
+                let config = Config::load();
+                setup_private_vault(config);
                 return;
             }
             "--cloud" | "-c" => {
@@ -1012,81 +1312,79 @@ fn main() {
                 // 아래에서 처리
             }
             url if url.starts_with("mdflare://") => {
-                // OAuth 콜백 처리
-                if let Some((username, token)) = parse_oauth_callback(url) {
-                    println!("🎉 로그인 성공: {}", username);
-                    
-                    let mut config = Config::load();
-                    config.storage_mode = StorageMode::Cloud;
-                    config.username = username;
-                    config.api_token = token;
-                    
-                    if config.local_path.is_empty() {
-                        let default_path = dirs::document_dir()
-                            .map(|d| d.join("MDFlare"))
-                            .unwrap_or_default();
-                        
-                        config.local_path = rfd::FileDialog::new()
-                            .set_title("MDFlare 동기화 폴더 선택")
-                            .set_directory(&default_path)
-                            .pick_folder()
-                            .map(|p| p.to_string_lossy().to_string())
-                            .unwrap_or_else(|| default_path.to_string_lossy().to_string());
-                    }
-                    
-                    fs::create_dir_all(&config.local_path).ok();
-                    config.save();
-                    
-                    run_cloud_tray_app(config);
-                } else {
-                    eprintln!("❌ 잘못된 콜백 URL");
-                }
+                handle_url_callback(url);
                 return;
             }
             "--help" | "-h" => {
-                println!("MDFlare Agent - 크로스플랫폼 마크다운 동기화");
+                println!("MDFlare Agent - 마크다운 동기화");
                 println!();
                 println!("사용법:");
                 println!("  mdflare-agent              저장된 설정으로 시작");
-                println!("  mdflare-agent -p           Private Vault 모드로 시작");
-                println!("  mdflare-agent -c           Cloud 모드로 시작");
-                println!();
-                println!("옵션:");
-                println!("  -p, --private-vault   로컬 서버 모드 (클라우드 없음)");
-                println!("  -c, --cloud           클라우드 동기화 모드");
-                println!("  -h, --help            도움말");
+                println!("  mdflare-agent -p           Private Vault 모드");
+                println!("  mdflare-agent -c           Cloud 모드");
+                println!("  -h, --help                 도움말");
                 return;
             }
             _ => {}
         }
     }
-    
-    // URL scheme 등록 (Windows)
+
+    // Windows URL scheme 등록
     register_url_scheme();
-    
-    // 설정 로드
+
     let config = Config::load();
-    
-    match config.storage_mode {
-        StorageMode::PrivateVault => {
-            if !config.local_path.is_empty() {
-                println!("🔐 Private Vault 모드");
-                println!("📁 {}", config.local_path);
-                run_private_vault_tray_app(config);
-            } else {
-                println!("⚙️ 설정 필요 - mdflare-agent --private-vault 로 시작하세요");
-            }
+    log_to_file(&format!("main: mode={:?} configured={} api_base={}", config.storage_mode, config.is_configured(), config.api_base));
+
+    // ── 첫 실행: 모드 선택 ──
+    if !config.is_configured() {
+        log_to_file("main: not configured → show mode selection");
+        let choice = rfd::MessageDialog::new()
+            .set_title("MDFlare Agent")
+            .set_description(
+                "사용할 모드를 선택하세요.\n\n\
+                 ☁️ Cloud — mdflare.com 계정과 파일을 동기화\n\
+                 🔐 Private Vault — 내 PC에 로컬 서버. 클라우드 없음"
+            )
+            .set_buttons(rfd::MessageButtons::YesNoCancelCustom(
+                "☁️ Cloud".to_string(),
+                "🔐 Private Vault".to_string(),
+                "취소".to_string(),
+            ))
+            .show();
+
+        let choice_str = match &choice {
+            rfd::MessageDialogResult::Yes => "cloud",
+            rfd::MessageDialogResult::No => "vault",
+            rfd::MessageDialogResult::Custom(s) if s.contains("Cloud") => "cloud",
+            rfd::MessageDialogResult::Custom(s) if s.contains("Vault") => "vault",
+            _ => "",
+        };
+
+        if choice_str == "cloud" {
+            let mut config = config;
+            config.storage_mode = StorageMode::Cloud;
+            config.save();
+            setup_cloud(config);
+        } else if choice_str == "vault" {
+            setup_private_vault(config);
         }
+        // else: 취소 → 종료
+        return;
+    }
+
+    // ── 설정 완료: 저장된 모드로 시작 ──
+    log_to_file(&format!("main: configured → starting {:?} mode", config.storage_mode));
+    match config.storage_mode {
         StorageMode::Cloud => {
-            if config.is_configured() {
-                println!("☁️ Cloud 모드");
-                println!("👤 {}", config.username);
-                println!("📁 {}", config.local_path);
-                run_cloud_tray_app(config);
-            } else {
-                println!("⚙️ 설정 필요 - 브라우저에서 로그인하세요");
-                open::that("https://mdflare.com/auth/agent").ok();
-            }
+            println!("☁️ Cloud 모드");
+            println!("👤 {}", config.username);
+            println!("📁 {}", config.local_path);
+            run_cloud_tray_app(config);
+        }
+        StorageMode::PrivateVault => {
+            println!("🔐 Private Vault 모드");
+            println!("📁 {}", config.local_path);
+            run_private_vault_tray_app(config);
         }
     }
 }
