@@ -57,6 +57,7 @@ rfd = "0.15"
 tao = "0.30"
 tray-icon = "0.17"
 muda = "0.14"             # 메뉴
+wry = "0.44"              # 웹뷰 (모드 선택 다이얼로그)
 
 # Windows 전용 (URL scheme 등록)
 [target.'cfg(windows)'.dependencies]
