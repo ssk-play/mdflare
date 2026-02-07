@@ -599,31 +599,6 @@ export default function Workspace({ user, isPrivateVault = false }) {
     navigate('/');
   };
 
-  // API 토큰 발급
-  const handleGenerateToken = async () => {
-    if (!user) return;
-    if (!confirm('API 토큰을 생성하시겠습니까?\n기존 토큰은 무효화됩니다.')) return;
-    const tid = addToast('🔑 토큰 생성 중...', 'loading');
-    try {
-      const headers = await authHeaders(isPrivateVault);
-      const res = await fetch('/api/token/generate', {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({ uid: user.uid, username: userId })
-      });
-      const data = await res.json();
-      if (data.token) {
-        await navigator.clipboard.writeText(data.token);
-        updateToast(tid, '🔑 토큰 생성 완료! 클립보드에 복사됨', 'success', 3000);
-        alert(`🔑 API 토큰 (클립보드에 복사됨)\n\n${data.token}\n\n에이전트 앱 설정에 붙여넣기 하세요.`);
-      } else {
-        updateToast(tid, '토큰 생성 실패: ' + (data.error || '알 수 없는 오류'), 'error');
-      }
-    } catch (err) {
-      updateToast(tid, '토큰 생성 실패', 'error');
-    }
-  };
-
   // 저장 안 된 변경사항 경고 (브라우저 닫기/새로고침)
   useEffect(() => {
     const handler = (e) => {
@@ -683,7 +658,6 @@ export default function Workspace({ user, isPrivateVault = false }) {
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <AgentStatus userId={userId} isPrivateVault={isPrivateVault} />
           <span className="user-badge">👤 {user?.displayName || userId}</span>
-          <button className="logout-btn" onClick={handleGenerateToken}>🔑 API 토큰</button>
           <button className="logout-btn" onClick={handleLogout}>로그아웃</button>
         </div>
       </header>
