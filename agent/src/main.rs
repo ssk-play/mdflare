@@ -934,6 +934,24 @@ impl SyncEngine {
         }
     }
 
+    fn handle_local_folder_delete(&mut self, folder_path: &Path) {
+        if let Ok(rel) = folder_path.strip_prefix(&self.local_path) {
+            let prefix = rel.to_string_lossy().replace('\\', "/");
+            let prefix_with_slash = if prefix.ends_with('/') { prefix.clone() } else { format!("{}/", prefix) };
+            let to_delete: Vec<String> = self.local_hashes.keys()
+                .filter(|k| k.starts_with(&prefix_with_slash))
+                .cloned()
+                .collect();
+            for path in to_delete {
+                if self.api.delete_file(&path).is_ok() {
+                    self.local_hashes.remove(&path);
+                    self.local_content_cache.remove(&path);
+                    println!("🗑️ {}", path);
+                }
+            }
+        }
+    }
+
     /// Handle an RTDB event (from SSE subscription)
     fn handle_rtdb_event(&mut self, entry: &RtdbFileEntry) {
         match entry.action.as_str() {
@@ -1242,13 +1260,18 @@ fn run_cloud_tray_app(config: Config) {
         let (tx, rx) = std::sync::mpsc::channel();
         let mut debouncer = new_debouncer(Duration::from_secs(1), tx).unwrap();
         debouncer.watcher().watch(Path::new(&watch_path), RecursiveMode::Recursive).ok();
-        
+
         for events in rx.iter().flatten() {
             for event in events {
                 if event.kind == DebouncedEventKind::Any {
                     if event.path.extension().map_or(false, |e| e == "md") {
                         if let Ok(mut eng) = engine_watcher.lock() {
                             eng.handle_local_change(&event.path);
+                        }
+                    } else if !event.path.exists() {
+                        // 폴더 삭제 감지: 경로가 존재하지 않고 확장자가 없으면 폴더 삭제
+                        if let Ok(mut eng) = engine_watcher.lock() {
+                            eng.handle_local_folder_delete(&event.path);
                         }
                     }
                 }
@@ -1621,6 +1644,10 @@ fn start_cloud_sync(config: &Config) -> Arc<Mutex<SyncEngine>> {
                         if let Ok(mut eng) = engine_watcher.lock() {
                             eng.handle_local_change(&event.path);
                         }
+                    } else if !event.path.exists() {
+                        if let Ok(mut eng) = engine_watcher.lock() {
+                            eng.handle_local_folder_delete(&event.path);
+                        }
                     }
                 }
             }
@@ -1683,6 +1710,40 @@ enum AppPhase {
     Cloud,         // Cloud 동기화 중
     Vault,         // Private Vault 동작 중
 }
+
+const FOLDER_SELECTION_HTML: &str = r#"<!DOCTYPE html>
+<html><head><meta charset="utf-8"><style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;background:#f5f5f7;padding:32px 24px 24px;color:#1d1d1f;-webkit-user-select:none;user-select:none}
+h1{font-size:18px;font-weight:600;text-align:center;margin-bottom:8px}
+.desc{font-size:13px;color:#86868b;text-align:center;margin-bottom:20px;line-height:1.5}
+.path-box{background:#fff;border:2px solid #0071e3;border-radius:10px;padding:12px 16px;font-size:14px;color:#1d1d1f;word-break:break-all;margin-bottom:16px;min-height:44px;display:flex;align-items:center}
+.buttons{display:flex;flex-direction:column;gap:8px}
+.btn{padding:10px;border-radius:10px;font-size:14px;font-weight:500;cursor:pointer;border:none;text-align:center}
+.btn-primary{background:#0071e3;color:#fff}
+.btn-primary:hover{background:#0077ED}
+.btn-primary:active{transform:scale(.98)}
+.btn-secondary{background:#e8e8ed;color:#1d1d1f}
+.btn-secondary:hover{background:#dddde1}
+.btn-cancel{background:none;color:#86868b;margin-top:4px}
+.btn-cancel:hover{background:#e8e8ed}
+</style></head><body>
+<h1>동기화 폴더 선택</h1>
+<p class="desc">마크다운 파일이 저장될 폴더를 확인하세요.</p>
+<div class="path-box" id="path">DEFAULT_PATH</div>
+<div class="buttons">
+  <div class="btn btn-primary" onclick="confirm()">이 폴더로 시작</div>
+  <div class="btn btn-secondary" onclick="browse()">다른 폴더 선택...</div>
+  <div class="btn btn-cancel" onclick="cancel()">취소</div>
+</div>
+<script>
+let currentPath = 'DEFAULT_PATH';
+function confirm(){ window.ipc.postMessage('ok:' + currentPath) }
+function browse(){ window.ipc.postMessage('browse:') }
+function cancel(){ window.ipc.postMessage('cancel:') }
+function setPath(p){ currentPath = p; document.getElementById('path').textContent = p; }
+</script>
+</body></html>"#;
 
 const MODE_SELECTION_HTML: &str = r#"<!DOCTYPE html>
 <html><head><meta charset="utf-8"><style>
@@ -1748,6 +1809,9 @@ fn run_setup_tray_app() {
     let vault_menu_ids: Arc<Mutex<Option<(muda::MenuId, muda::MenuId, muda::MenuId)>>> = Arc::new(Mutex::new(None));
     let needs_show_mode_dialog: Arc<Mutex<bool>> = Arc::new(Mutex::new(false));
     let dialog_choice: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
+    let needs_show_folder_dialog: Arc<Mutex<bool>> = Arc::new(Mutex::new(false));
+    let folder_choice: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
+    let pending_cloud_config: Arc<Mutex<Option<Config>>> = Arc::new(Mutex::new(None));
 
     let phase_loop = phase.clone();
     let cloud_state_loop = cloud_state.clone();
@@ -1877,8 +1941,13 @@ fn run_setup_tray_app() {
 
     let needs_show_mode_dialog_loop = needs_show_mode_dialog.clone();
     let dialog_choice_loop = dialog_choice.clone();
+    let needs_show_folder_dialog_loop = needs_show_folder_dialog.clone();
+    let folder_choice_loop = folder_choice.clone();
+    let pending_cloud_config_loop = pending_cloud_config.clone();
     let mut mode_dialog_webview: Option<wry::WebView> = None;
     let mut mode_dialog_window: Option<tao::window::Window> = None;
+    let mut folder_dialog_webview: Option<wry::WebView> = None;
+    let mut folder_dialog_window: Option<tao::window::Window> = None;
 
     event_loop.run(move |event, target, control_flow| {
         *control_flow = ControlFlow::WaitUntil(
@@ -1943,6 +2012,91 @@ fn run_setup_tray_app() {
             }
         }
 
+        // 폴더 선택 다이얼로그 표시
+        {
+            let mut flag = needs_show_folder_dialog_loop.lock().unwrap();
+            if *flag {
+                *flag = false;
+                let default_path = dirs::document_dir()
+                    .map(|d| d.join("MDFlare"))
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .to_string();
+                let html = FOLDER_SELECTION_HTML.replace("DEFAULT_PATH", &default_path);
+
+                let window = tao::window::WindowBuilder::new()
+                    .with_title("MDFlare")
+                    .with_inner_size(tao::dpi::LogicalSize::new(420.0, 320.0))
+                    .with_resizable(false)
+                    .build(target)
+                    .expect("Failed to create folder dialog window");
+
+                let fc = folder_choice_loop.clone();
+                let webview = wry::WebViewBuilder::new(&window)
+                    .with_html(&html)
+                    .with_ipc_handler(move |req| {
+                        *fc.lock().unwrap() = Some(req.body().clone());
+                    })
+                    .build()
+                    .expect("Failed to create folder webview");
+
+                folder_dialog_window = Some(window);
+                folder_dialog_webview = Some(webview);
+            }
+        }
+
+        // 폴더 선택 결과 처리
+        if let Some(choice) = folder_choice_loop.lock().unwrap().take() {
+            let action = if choice.starts_with("browse:") {
+                "browse"
+            } else if choice.starts_with("ok:") {
+                "ok"
+            } else {
+                "cancel"
+            };
+
+            match action {
+                "browse" => {
+                    let selected = pick_folder("동기화 폴더 선택");
+                    // 선택된 경로를 웹뷰에 전달
+                    if let Some(ref wv) = folder_dialog_webview {
+                        let js = format!("setPath('{}')", selected.replace('\\', "\\\\").replace('\'', "\\'"));
+                        wv.evaluate_script(&js).ok();
+                    }
+                }
+                "ok" => {
+                    let path = choice.strip_prefix("ok:").unwrap_or("").to_string();
+                    folder_dialog_webview.take();
+                    folder_dialog_window.take();
+
+                    if let Some(mut config) = pending_cloud_config_loop.lock().unwrap().take() {
+                        config.local_path = path;
+                        fs::create_dir_all(&config.local_path).ok();
+                        config.save();
+
+                        log_to_file(&format!("setup_tray: folder selected → {} → switching to cloud tray", config.local_path));
+
+                        let (cloud_menu, sync_id, folder_id, web_id, logoff_id, quit_id) = build_cloud_menu(&config);
+                        tray.borrow_mut().set_menu(Some(Box::new(cloud_menu)));
+                        let _ = tray.borrow_mut().set_tooltip(Some(&format!("MDFlare Agent (☁️ {})", config.username)));
+                        tray.borrow_mut().set_icon(Some(load_icon_active())).ok();
+
+                        let engine = start_cloud_sync(&config);
+                        *cloud_state_loop.lock().unwrap() = Some((config, engine));
+                        *cloud_menu_ids_loop.lock().unwrap() = Some((sync_id, folder_id, web_id, logoff_id, quit_id));
+                        *phase_loop.lock().unwrap() = AppPhase::Cloud;
+                    }
+                }
+                _ => {
+                    // cancel — 폴더 선택 취소, 다이얼로그 닫고 대기 상태 유지
+                    folder_dialog_webview.take();
+                    folder_dialog_window.take();
+                    pending_cloud_config_loop.lock().unwrap().take();
+                    *phase_loop.lock().unwrap() = AppPhase::Setup;
+                }
+            }
+        }
+
         // 트레이 업데이트 폴링
         if let Some(config) = needs_cloud_update_loop.lock().unwrap().take() {
             let (cloud_menu, sync_id, folder_id, web_id, logoff_id, quit_id) = build_cloud_menu(&config);
@@ -2002,9 +2156,15 @@ fn run_setup_tray_app() {
         // 이벤트 처리
         match event {
             Event::WindowEvent { event: tao::event::WindowEvent::CloseRequested, .. } => {
-                // 모드 선택 다이얼로그 닫기 (X 버튼)
+                // 다이얼로그 닫기 (X 버튼)
                 mode_dialog_webview.take();
                 mode_dialog_window.take();
+                if folder_dialog_webview.is_some() {
+                    folder_dialog_webview.take();
+                    folder_dialog_window.take();
+                    pending_cloud_config_loop.lock().unwrap().take();
+                    *phase_loop.lock().unwrap() = AppPhase::Setup;
+                }
             }
             Event::Opened { urls } => {
                 for url in urls {
@@ -2025,27 +2185,29 @@ fn run_setup_tray_app() {
                         config.storage_mode = StorageMode::Cloud;
                         config.username = username;
                         config.api_token = token;
+
                         if config.local_path.is_empty() {
-                            config.local_path = dirs::document_dir()
-                                .map(|d| d.join("MDFlare"))
-                                .unwrap_or_default()
-                                .to_string_lossy()
-                                .to_string();
+                            // 폴더 선택 다이얼로그 표시
+                            log_to_file(&format!("setup_tray: logged in as {} → showing folder dialog", config.username));
+                            *pending_cloud_config_loop.lock().unwrap() = Some(config);
+                            *needs_show_folder_dialog_loop.lock().unwrap() = true;
+                        } else {
+                            // 이미 폴더가 설정된 경우 (재로그인 등)
+                            fs::create_dir_all(&config.local_path).ok();
+                            config.save();
+
+                            log_to_file(&format!("setup_tray: logged in as {} → switching to cloud tray", config.username));
+
+                            let (cloud_menu, sync_id, folder_id, web_id, logoff_id, quit_id) = build_cloud_menu(&config);
+                            tray.borrow_mut().set_menu(Some(Box::new(cloud_menu)));
+                            let _ = tray.borrow_mut().set_tooltip(Some(&format!("MDFlare Agent (☁️ {})", config.username)));
+                            tray.borrow_mut().set_icon(Some(load_icon_active())).ok();
+
+                            let engine = start_cloud_sync(&config);
+                            *cloud_state_loop.lock().unwrap() = Some((config, engine));
+                            *cloud_menu_ids_loop.lock().unwrap() = Some((sync_id, folder_id, web_id, logoff_id, quit_id));
+                            *phase_loop.lock().unwrap() = AppPhase::Cloud;
                         }
-                        fs::create_dir_all(&config.local_path).ok();
-                        config.save();
-
-                        log_to_file(&format!("setup_tray: logged in as {} → switching to cloud tray", config.username));
-
-                        let (cloud_menu, sync_id, folder_id, web_id, logoff_id, quit_id) = build_cloud_menu(&config);
-                        tray.borrow_mut().set_menu(Some(Box::new(cloud_menu)));
-                        let _ = tray.borrow_mut().set_tooltip(Some(&format!("MDFlare Agent (☁️ {})", config.username)));
-                        tray.borrow_mut().set_icon(Some(load_icon_active())).ok();
-
-                        let engine = start_cloud_sync(&config);
-                        *cloud_state_loop.lock().unwrap() = Some((config, engine));
-                        *cloud_menu_ids_loop.lock().unwrap() = Some((sync_id, folder_id, web_id, logoff_id, quit_id));
-                        *phase_loop.lock().unwrap() = AppPhase::Cloud;
                     }
                 }
             }

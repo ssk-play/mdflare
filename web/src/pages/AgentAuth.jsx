@@ -42,8 +42,7 @@ export default function AgentAuth() {
       const data = await res.json();
       
       if (!data.username) {
-        setError('먼저 웹에서 username을 설정해주세요.');
-        setStatus('error');
+        setStatus('needs_username');
         return;
       }
 
@@ -114,6 +113,15 @@ export default function AgentAuth() {
               ✅ 에이전트 연결 승인
             </button>
             <p className="hint">버튼을 누르면 MDFlare 에이전트 앱이 열립니다.</p>
+          </>
+        )}
+
+        {status === 'needs_username' && (
+          <>
+            <p className="status">사용할 ID를 먼저 설정해주세요.</p>
+            <a href="/setup?return=agent" className="auth-btn primary" style={{display:'inline-block',textDecoration:'none',marginTop:'12px'}}>
+              ID 설정하기
+            </a>
           </>
         )}
 

@@ -69,7 +69,8 @@ export default function SetUsername({ user }) {
       });
       const data = await res.json();
       if (data.registered) {
-        navigate(`/${username}`);
+        const returnTo = new URLSearchParams(window.location.search).get('return');
+        navigate(returnTo === 'agent' ? '/auth/agent' : `/${username}`);
       } else {
         setStatus('error');
         setMessage(data.error || '등록 실패');
