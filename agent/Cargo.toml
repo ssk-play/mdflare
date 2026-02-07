@@ -1,6 +1,6 @@
 [package]
 name = "mdflare-agent"
-version = "1.0.4"
+version = "1.0.7"
 edition = "2021"
 description = "MDFlare sync agent for Windows/macOS/Linux"
 authors = ["MDFlare"]
@@ -57,6 +57,8 @@ rfd = "0.15"
 tao = "0.30"
 tray-icon = "0.17"
 muda = "0.14"             # 메뉴
+wry = "0.44"              # 웹뷰 (모드 선택 다이얼로그)
+similar = "2.6"           # diff 생성/적용
 
 # Windows 전용 (URL scheme 등록)
 [target.'cfg(windows)'.dependencies]

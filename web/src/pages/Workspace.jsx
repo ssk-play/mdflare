@@ -1,12 +1,13 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import CodeMirror from '@uiw/react-codemirror';
 import { markdown } from '@codemirror/lang-markdown';
 import { EditorView } from '@codemirror/view';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { updateFileMeta, onFilesChanged, simpleHash, logout, auth } from '../firebase';
+import { updateFileMeta, deleteFileMeta, onFilesChanged, simpleHash, computeLineDiff, logout, auth } from '../firebase';
 import { getAppName } from '../components/AppTitle';
+import AgentStatus from '../components/AgentStatus';
 
 const API = '/api';
 const AUTO_SAVE_DELAY = 1000;
@@ -86,6 +87,8 @@ const lightTheme = EditorView.theme({
   '.cm-activeLine': { backgroundColor: '#0969da08' },
 }, { dark: false });
 
+const cmStyle = { flex: 1, overflow: 'auto' };
+
 // 토스트 알림 컴포넌트
 function Toast({ toasts, onRemove }) {
   return (
@@ -142,6 +145,19 @@ export default function Workspace({ user, isPrivateVault = false }) {
   });
   const saveTimer = useRef(null);
   const toastId = useRef(0);
+  const contentRef = useRef('');
+  const savedContentRef = useRef('');
+  const lastSavedHashRef = useRef(null);
+
+  // refs를 state와 동기화 (RTDB 리스너에서 최신 값 참조용)
+  useEffect(() => { contentRef.current = content; }, [content]);
+  useEffect(() => { savedContentRef.current = savedContent; }, [savedContent]);
+
+  // CodeMirror extensions 메모이제이션 (리렌더 시 에디터 재설정 방지)
+  const cmExtensions = useMemo(
+    () => [markdown(), lightMode ? lightTheme : darkTheme, EditorView.lineWrapping],
+    [lightMode]
+  );
 
   // 토스트 헬퍼
   const addToast = useCallback((message, type = 'loading', duration = null) => {
@@ -222,28 +238,42 @@ export default function Workspace({ user, isPrivateVault = false }) {
     };
   }, []);
 
-  // Firebase 변경 감지
+  // Firebase 변경 감지 (refs 사용 → 리스너 재구독 최소화)
   useEffect(() => {
     const unsubscribe = onFilesChanged(userId, async (changedFiles) => {
       if (currentFile) {
         const changed = changedFiles.find(f => f.path === currentFile.path);
-        if (changed && changed.hash !== simpleHash(content)) {
-          try {
-            const headers = await authHeaders(isPrivateVault);
-            const r = await fetch(buildApiUrl(`/file/${encodePath(currentFile.path)}`), { headers });
-            const data = await r.json();
-            setContent(data.content);
-            setSavedContent(data.content);
-            setSaveStatus('idle');
-          } catch (err) {
-            console.error('Failed to reload:', err);
+        if (changed) {
+          // 자기 자신이 방금 저장한 변경이면 스킵
+          if (changed.hash === lastSavedHashRef.current) {
+            lastSavedHashRef.current = null;
+            loadFiles();
+            return;
+          }
+          // 사용자가 편집 중이면 (미저장 변경이 있으면) 스킵
+          if (contentRef.current !== savedContentRef.current) {
+            loadFiles();
+            return;
+          }
+          // 원격 변경만 반영
+          if (changed.hash !== simpleHash(contentRef.current)) {
+            try {
+              const headers = await authHeaders(isPrivateVault);
+              const r = await fetch(buildApiUrl(`/file/${encodePath(currentFile.path)}`), { headers });
+              const data = await r.json();
+              setContent(data.content);
+              setSavedContent(data.content);
+              setSaveStatus('idle');
+            } catch (err) {
+              console.error('Failed to reload:', err);
+            }
           }
         }
       }
       loadFiles();
     });
     return () => unsubscribe && unsubscribe();
-  }, [currentFile, content, loadFiles, userId]);
+  }, [currentFile, loadFiles, userId]);
 
   // 파일 열기 (URL 변경 + 최근 파일 기록)
   const openFile = useCallback((fp) => {
@@ -255,41 +285,43 @@ export default function Workspace({ user, isPrivateVault = false }) {
     });
   }, [userId, navigate]);
 
-  // 자동 저장
+  // 자동 저장 (savedContentRef 사용 → 불필요한 재생성 방지)
   const doSave = useCallback(async (fp, newContent) => {
     setSaveStatus('saving');
     try {
+      const prev = savedContentRef.current;
+      const oldHash = simpleHash(prev);
+      const newHash = simpleHash(newContent);
+      const diff = computeLineDiff(prev, newContent);
       const res = await fetch(buildApiUrl(`/file/${encodePath(fp)}`), {
         method: 'PUT',
         headers: await authHeaders(isPrivateVault),
-        body: JSON.stringify({ content: newContent })
+        body: JSON.stringify({ content: newContent, oldHash, diff })
       });
       const data = await res.json();
       if (data.saved) {
+        lastSavedHashRef.current = newHash;
         setSavedContent(newContent);
         setSaveStatus('saved');
-        updateFileMeta(userId, fp, {
-          size: new Blob([newContent]).size,
-          hash: simpleHash(newContent)
-        }).catch(err => console.error('Firebase meta update failed:', err));
+        // Worker가 RTDB에 기록하므로 여기서 updateFileMeta 호출 불필요
         setTimeout(() => setSaveStatus(s => s === 'saved' ? 'idle' : s), 2000);
       }
     } catch (err) {
       console.error('Failed to save:', err);
       setSaveStatus('error');
     }
-  }, [userId]);
+  }, [userId, isPrivateVault]);
 
   const handleChange = useCallback((val) => {
     setContent(val);
     if (saveTimer.current) clearTimeout(saveTimer.current);
-    if (val !== savedContent && currentFile) {
+    if (val !== savedContentRef.current && currentFile) {
       setSaveStatus('editing');
       saveTimer.current = setTimeout(() => {
         doSave(currentFile.path, val);
       }, AUTO_SAVE_DELAY);
     }
-  }, [savedContent, currentFile, doSave]);
+  }, [currentFile, doSave]);
 
   useEffect(() => {
     return () => { if (saveTimer.current) clearTimeout(saveTimer.current); };
@@ -336,11 +368,19 @@ export default function Workspace({ user, isPrivateVault = false }) {
     const tid = addToast(`📄 "${fileName}" 생성 중...`, 'loading');
     setSidebarLoading(true);
     try {
+      const newContent = `# ${name.replace('.md', '')}\n\n`;
       await fetch(buildApiUrl(`/file/${encodePath(fp)}`), {
         method: 'PUT',
         headers: await authHeaders(isPrivateVault),
-        body: JSON.stringify({ content: `# ${name.replace('.md', '')}\n\n` })
+        body: JSON.stringify({ content: newContent })
       });
+      if (!isPrivateVault) {
+        updateFileMeta(userId, fp, {
+          size: new Blob([newContent]).size,
+          hash: simpleHash(newContent),
+          action: 'create'
+        }).catch(err => console.error('Firebase meta update failed:', err));
+      }
       await loadFiles();
       updateToast(tid, `📄 "${fileName}" 생성 완료!`, 'success');
       openFile(fp);
@@ -402,6 +442,15 @@ export default function Workspace({ user, isPrivateVault = false }) {
         headers: await authHeaders(isPrivateVault),
         body: JSON.stringify({ oldPath: sourcePath, newPath })
       });
+      if (!isPrivateVault) {
+        deleteFileMeta(userId, sourcePath).catch(err => console.error('Firebase delete old meta failed:', err));
+        updateFileMeta(userId, newPath, {
+          size: 0,
+          hash: '',
+          action: 'rename',
+          oldPath: sourcePath
+        }).catch(err => console.error('Firebase move meta failed:', err));
+      }
       await loadFiles();
       updateToast(tid, `📦 "${name}" 이동 완료!`, 'success');
       if (currentFile?.path === sourcePath) openFile(newPath);
@@ -430,6 +479,13 @@ export default function Workspace({ user, isPrivateVault = false }) {
         headers: await authHeaders(isPrivateVault),
         body: JSON.stringify({ content: '' })
       });
+      if (!isPrivateVault) {
+        updateFileMeta(userId, fp, {
+          size: 0,
+          hash: simpleHash(''),
+          action: 'create'
+        }).catch(err => console.error('Firebase meta update failed:', err));
+      }
       await loadFiles();
       updateToast(tid, `📁 "${name}" 폴더 생성 완료!`, 'success');
     } catch (err) {
@@ -454,6 +510,16 @@ export default function Workspace({ user, isPrivateVault = false }) {
         headers: await authHeaders(isPrivateVault),
         body: JSON.stringify({ oldPath, newPath })
       });
+      if (!isPrivateVault) {
+        // 이전 경로 RTDB 엔트리 삭제 + 새 경로에 rename 기록
+        deleteFileMeta(userId, oldPath).catch(err => console.error('Firebase delete old meta failed:', err));
+        updateFileMeta(userId, newPath, {
+          size: 0,
+          hash: '',
+          action: 'rename',
+          oldPath
+        }).catch(err => console.error('Firebase rename meta failed:', err));
+      }
       await loadFiles();
       updateToast(tid, `✏️ 이름 변경 완료!`, 'success');
       if (currentFile?.path === oldPath) openFile(newPath);
@@ -474,6 +540,9 @@ export default function Workspace({ user, isPrivateVault = false }) {
     try {
       const folderQuery = isFolder ? '?folder=true' : '';
       await fetch(buildApiUrl(`/file/${encodePath(fp)}${folderQuery}`), { method: 'DELETE', headers: await authHeaders(isPrivateVault) });
+      if (!isPrivateVault) {
+        deleteFileMeta(userId, fp).catch(err => console.error('Firebase delete meta failed:', err));
+      }
       await loadFiles();
       updateToast(tid, `🗑️ "${name}" ${label} 삭제 완료`, 'success');
       if (currentFile?.path === fp || (isFolder && currentFile?.path?.startsWith(fp + '/'))) {
@@ -502,6 +571,13 @@ export default function Workspace({ user, isPrivateVault = false }) {
         headers: await authHeaders(isPrivateVault),
         body: JSON.stringify({ content: data.content })
       });
+      if (!isPrivateVault) {
+        updateFileMeta(userId, newPath, {
+          size: new Blob([data.content]).size,
+          hash: simpleHash(data.content),
+          action: 'create'
+        }).catch(err => console.error('Firebase meta update failed:', err));
+      }
       await loadFiles();
       updateToast(tid, `📋 "${fileName}" 복제 완료!`, 'success');
     } catch (err) {
@@ -592,8 +668,8 @@ export default function Workspace({ user, isPrivateVault = false }) {
     return () => window.removeEventListener('keydown', handler);
   }, [currentFile, content, savedContent, doSave]);
 
-  const statusText = { idle: '', editing: '✏️', saving: '저장 중...', saved: '✓ 저장됨', error: '⚠️ 저장 실패' };
-  const statusClass = { idle: '', editing: 'unsaved', saving: 'saving', saved: 'saved', error: 'error' };
+  const statusClass = { idle: 'idle', editing: 'unsaved', saving: 'saving', saved: 'saved', error: 'error' };
+  const statusTitle = { idle: '', editing: '수정됨', saving: '저장 중...', saved: '저장됨', error: '저장 실패' };
 
   return (
     <>
@@ -605,6 +681,7 @@ export default function Workspace({ user, isPrivateVault = false }) {
           <h1 onClick={() => navigate(`/${userId}`)} style={{ cursor: 'pointer' }}>🔥 {getAppName()}</h1>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <AgentStatus userId={userId} isPrivateVault={isPrivateVault} />
           <span className="user-badge">👤 {user?.displayName || userId}</span>
           <button className="logout-btn" onClick={handleGenerateToken}>🔑 API 토큰</button>
           <button className="logout-btn" onClick={handleLogout}>로그아웃</button>
@@ -739,7 +816,7 @@ export default function Workspace({ user, isPrivateVault = false }) {
                     URL.revokeObjectURL(url);
                     addToast('💾 다운로드 시작', 'success', 2000);
                   }} title="파일 다운로드">💾</button>
-                  <span className={`save-status ${statusClass[saveStatus]}`}>{statusText[saveStatus]}</span>
+                  <span className={`save-status ${statusClass[saveStatus]}`} title={statusTitle[saveStatus]} />
                 </div>
               </div>
               <div className="editor-stats">
@@ -750,8 +827,8 @@ export default function Workspace({ user, isPrivateVault = false }) {
               <div className="editor-content">
                 {(view === 'edit' || view === 'split') && (
                   <CodeMirror value={content} onChange={handleChange}
-                    extensions={[markdown(), lightMode ? lightTheme : darkTheme, EditorView.lineWrapping]}
-                    theme="none" style={{ flex: 1, overflow: 'auto' }} />
+                    extensions={cmExtensions}
+                    theme="none" style={cmStyle} />
                 )}
                 {(view === 'preview' || view === 'split') && (
                   <div className="preview">
@@ -780,6 +857,13 @@ export default function Workspace({ user, isPrivateVault = false }) {
                       headers: await authHeaders(isPrivateVault),
                       body: JSON.stringify({ content: text })
                     });
+                    if (!isPrivateVault) {
+                      updateFileMeta(userId, fp, {
+                        size: new Blob([text]).size,
+                        hash: simpleHash(text),
+                        action: 'create'
+                      }).catch(err => console.error('Firebase meta update failed:', err));
+                    }
                   }
                   await loadFiles();
                   updateToast(tid, `📤 ${droppedFiles.length}개 파일 업로드 완료!`, 'success');

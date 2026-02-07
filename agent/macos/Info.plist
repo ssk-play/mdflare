@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleIdentifier</key>
+	<string>com.mdflare.agent</string>
+	<key>CFBundleName</key>
+	<string>MDFlare Agent</string>
+	<key>CFBundleDisplayName</key>
+	<string>MDFlare Agent</string>
+	<key>CFBundleExecutable</key>
+	<string>mdflare-agent</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleVersion</key>
+	<string>1.0.7</string>
+	<key>CFBundleShortVersionString</key>
+	<string>1.0.7</string>
+	<key>LSUIElement</key>
+	<true/>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>com.mdflare.agent.url</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>mdflare</string>
+			</array>
+		</dict>
+	</array>
+</dict>
+</plist>

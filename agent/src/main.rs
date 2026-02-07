@@ -17,6 +17,7 @@ use muda::{Menu, MenuEvent, MenuItem, PredefinedMenuItem};
 use notify::RecursiveMode;
 use notify_debouncer_mini::{new_debouncer, DebouncedEventKind};
 use serde::{Deserialize, Serialize};
+use tao::event::Event;
 use tao::event_loop::{ControlFlow, EventLoop};
 use tower_http::cors::{Any, CorsLayer};
 use tray_icon::{Icon, TrayIconBuilder};
@@ -60,10 +61,12 @@ struct Config {
 
 impl Default for Config {
     fn default() -> Self {
+        let api_base = std::env::var("MDFLARE_API_BASE")
+            .unwrap_or_else(|_| "https://mdflare.com".to_string());
         Self {
             storage_mode: StorageMode::Cloud,
             local_path: String::new(),
-            api_base: "https://mdflare.com".to_string(),
+            api_base,
             username: String::new(),
             api_token: String::new(),
             server_port: 7779,
@@ -107,11 +110,16 @@ impl Config {
 
     fn load() -> Self {
         let path = Self::config_path();
-        if let Ok(data) = fs::read_to_string(&path) {
+        let mut config = if let Ok(data) = fs::read_to_string(&path) {
             serde_json::from_str(&data).unwrap_or_default()
         } else {
             Self::default()
+        };
+        // 환경변수가 있으면 항상 우선
+        if let Ok(base) = std::env::var("MDFLARE_API_BASE") {
+            config.api_base = base;
         }
+        config
     }
 
     fn save(&self) {
@@ -178,23 +186,48 @@ impl ApiClient {
 
     fn list_files(&self) -> Result<Vec<FileItem>, reqwest::Error> {
         let url = format!("{}/api/{}/files", self.base_url, self.username);
-        let resp: FilesResponse = self.client.get(&url).send()?.json()?;
+        let resp: FilesResponse = self.client
+            .get(&url)
+            .header("Authorization", format!("Bearer {}", self.token))
+            .send()?
+            .json()?;
         Ok(resp.files)
     }
 
     fn get_file(&self, path: &str) -> Result<FileContent, reqwest::Error> {
         let encoded = urlencoding::encode(path);
         let url = format!("{}/api/{}/file/{}", self.base_url, self.username, encoded);
-        self.client.get(&url).send()?.json()
+        self.client
+            .get(&url)
+            .header("Authorization", format!("Bearer {}", self.token))
+            .send()?
+            .json()
     }
 
     fn put_file(&self, path: &str, content: &str) -> Result<(), Box<dyn std::error::Error>> {
+        self.put_file_with_diff(path, content, None, None)
+    }
+
+    fn put_file_with_diff(
+        &self,
+        path: &str,
+        content: &str,
+        old_hash: Option<&str>,
+        diff: Option<&serde_json::Value>,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         let encoded = urlencoding::encode(path);
         let url = format!("{}/api/{}/file/{}", self.base_url, self.username, encoded);
+        let mut body = serde_json::json!({ "content": content });
+        if let Some(oh) = old_hash {
+            body["oldHash"] = serde_json::json!(oh);
+        }
+        if let Some(d) = diff {
+            body["diff"] = d.clone();
+        }
         self.client
             .put(&url)
             .header("Authorization", format!("Bearer {}", self.token))
-            .json(&serde_json::json!({ "content": content }))
+            .json(&body)
             .send()?;
         Ok(())
     }
@@ -208,6 +241,33 @@ impl ApiClient {
             .send()?;
         Ok(())
     }
+
+    fn put_heartbeat(&self) {
+        let url = format!("{}/api/{}/agent-status", self.base_url, self.username);
+        self.client
+            .put(&url)
+            .header("Authorization", format!("Bearer {}", self.token))
+            .send()
+            .ok();
+    }
+
+    fn get_sync_config(&self) -> Result<RtdbConfig, Box<dyn std::error::Error>> {
+        let url = format!("{}/api/{}/sync-config", self.base_url, self.username);
+        let resp: RtdbConfig = self.client
+            .get(&url)
+            .header("Authorization", format!("Bearer {}", self.token))
+            .send()?
+            .json()?;
+        Ok(resp)
+    }
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RtdbConfig {
+    rtdb_url: String,
+    rtdb_auth: String,
+    user_id: String,
 }
 
 // ============================================================================
@@ -581,10 +641,147 @@ fn generate_connection_token_with_url(url: &str, token: &str) -> String {
 // Sync Engine (Cloud 모드용)
 // ============================================================================
 
+// ============================================================================
+// RTDB types and diff helpers
+// ============================================================================
+
+#[derive(Debug, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct RtdbFileEntry {
+    path: String,
+    action: String,
+    #[allow(dead_code)]
+    hash: Option<String>,
+    old_hash: Option<String>,
+    diff: Option<Vec<serde_json::Value>>,
+    old_path: Option<String>,
+    #[allow(dead_code)]
+    modified: Option<u64>,
+    #[allow(dead_code)]
+    size: Option<u64>,
+}
+
+/// Apply a line-based diff to content.
+/// diff ops: {"eq": N}, {"del": N}, {"ins": ["line1", ...]}
+fn apply_line_diff(old_content: &str, diff: &[serde_json::Value]) -> Option<String> {
+    let old_lines: Vec<&str> = old_content.split('\n').collect();
+    let mut result = Vec::new();
+    let mut pos = 0;
+
+    for op in diff {
+        if let Some(eq) = op.get("eq").and_then(|v| v.as_u64()) {
+            let eq = eq as usize;
+            if pos + eq > old_lines.len() {
+                return None; // diff doesn't match
+            }
+            result.extend_from_slice(&old_lines[pos..pos + eq]);
+            pos += eq;
+        } else if let Some(del) = op.get("del").and_then(|v| v.as_u64()) {
+            let del = del as usize;
+            if pos + del > old_lines.len() {
+                return None;
+            }
+            pos += del;
+        } else if let Some(ins) = op.get("ins").and_then(|v| v.as_array()) {
+            for line in ins {
+                if let Some(s) = line.as_str() {
+                    result.push(s);
+                } else {
+                    return None;
+                }
+            }
+        } else {
+            return None; // unknown op
+        }
+    }
+    // remaining lines (if any eq ops missed)
+    result.extend_from_slice(&old_lines[pos..]);
+    Some(result.join("\n"))
+}
+
+/// Generate a line-based diff using the `similar` crate.
+fn generate_line_diff(old_content: &str, new_content: &str) -> serde_json::Value {
+    use similar::{ChangeTag, TextDiff};
+
+    let text_diff = TextDiff::from_lines(old_content, new_content);
+    let mut ops: Vec<serde_json::Value> = Vec::new();
+    let mut eq_count = 0usize;
+    let mut del_count = 0usize;
+    let mut ins_lines: Vec<String> = Vec::new();
+
+    let flush_del = |ops: &mut Vec<serde_json::Value>, del: &mut usize| {
+        if *del > 0 {
+            ops.push(serde_json::json!({"del": *del}));
+            *del = 0;
+        }
+    };
+    let flush_ins = |ops: &mut Vec<serde_json::Value>, ins: &mut Vec<String>| {
+        if !ins.is_empty() {
+            ops.push(serde_json::json!({"ins": ins.clone()}));
+            ins.clear();
+        }
+    };
+    let flush_eq = |ops: &mut Vec<serde_json::Value>, eq: &mut usize| {
+        if *eq > 0 {
+            ops.push(serde_json::json!({"eq": *eq}));
+            *eq = 0;
+        }
+    };
+
+    for change in text_diff.iter_all_changes() {
+        match change.tag() {
+            ChangeTag::Equal => {
+                flush_del(&mut ops, &mut del_count);
+                flush_ins(&mut ops, &mut ins_lines);
+                eq_count += 1;
+            }
+            ChangeTag::Delete => {
+                flush_eq(&mut ops, &mut eq_count);
+                flush_ins(&mut ops, &mut ins_lines);
+                del_count += 1;
+            }
+            ChangeTag::Insert => {
+                flush_eq(&mut ops, &mut eq_count);
+                // strip trailing newline that similar adds
+                let val = change.value();
+                let line = if val.ends_with('\n') { &val[..val.len()-1] } else { val };
+                ins_lines.push(line.to_string());
+            }
+        }
+    }
+    flush_eq(&mut ops, &mut eq_count);
+    flush_del(&mut ops, &mut del_count);
+    flush_ins(&mut ops, &mut ins_lines);
+
+    serde_json::json!(ops)
+}
+
+/// Convert i32 to base-36 string, matching JS `Number.prototype.toString(36)`.
+/// Negative numbers are prefixed with '-'.
+fn to_base36(n: i32) -> String {
+    if n == 0 {
+        return "0".to_string();
+    }
+    let negative = n < 0;
+    let mut val = if negative { (n as i64).abs() as u64 } else { n as u64 };
+    let digits = b"0123456789abcdefghijklmnopqrstuvwxyz";
+    let mut buf = Vec::new();
+    while val > 0 {
+        buf.push(digits[(val % 36) as usize]);
+        val /= 36;
+    }
+    if negative {
+        buf.push(b'-');
+    }
+    buf.reverse();
+    String::from_utf8(buf).unwrap()
+}
+
 struct SyncEngine {
     api: ApiClient,
     local_path: PathBuf,
     local_hashes: HashMap<String, String>,
+    local_content_cache: HashMap<String, String>,
     remote_modified: HashMap<String, String>,
 }
 
@@ -594,6 +791,7 @@ impl SyncEngine {
             api: ApiClient::new(&config.api_base, &config.username, &config.api_token),
             local_path: PathBuf::from(&config.local_path),
             local_hashes: HashMap::new(),
+            local_content_cache: HashMap::new(),
             remote_modified: HashMap::new(),
         }
     }
@@ -603,7 +801,8 @@ impl SyncEngine {
         for c in s.chars() {
             hash = ((hash << 5).wrapping_sub(hash)).wrapping_add(c as i32);
         }
-        format!("{:x}", hash)
+        // JS의 hash.toString(36)과 동일한 base-36 출력
+        to_base36(hash)
     }
 
     fn flatten_files(items: &[FileItem]) -> Vec<(String, Option<String>)> {
@@ -656,6 +855,7 @@ impl SyncEngine {
                             continue;
                         }
                         self.local_hashes.insert(path.clone(), Self::simple_hash(&content.content));
+                        self.local_content_cache.insert(path.clone(), content.content);
                         if let Some(mod_time) = modified {
                             self.remote_modified.insert(path.clone(), mod_time.clone());
                         }
@@ -678,6 +878,7 @@ impl SyncEngine {
                             continue;
                         }
                         self.local_hashes.insert(path.clone(), Self::simple_hash(&content));
+                        self.local_content_cache.insert(path.clone(), content);
                         println!("⬆️ {}", path);
                         uploaded += 1;
                     }
@@ -686,19 +887,39 @@ impl SyncEngine {
             }
         }
 
+        self.api.put_heartbeat();
         Ok((downloaded, uploaded))
     }
 
     fn handle_local_change(&mut self, full_path: &Path) {
         if let Ok(rel) = full_path.strip_prefix(&self.local_path) {
             let rel_str = rel.to_string_lossy().replace('\\', "/");
-            
+
             if full_path.exists() {
                 if let Ok(content) = fs::read_to_string(full_path) {
-                    let hash = Self::simple_hash(&content);
-                    if self.local_hashes.get(&rel_str) != Some(&hash) {
-                        self.local_hashes.insert(rel_str.clone(), hash);
-                        if self.api.put_file(&rel_str, &content).is_ok() {
+                    let new_hash = Self::simple_hash(&content);
+                    if self.local_hashes.get(&rel_str) != Some(&new_hash) {
+                        let old_hash = self.local_hashes.get(&rel_str).cloned();
+                        // 이전 내용 읽어서 diff 생성 (해시가 있으면 이전 버전 존재)
+                        let diff = if old_hash.is_some() {
+                            let diff_val = generate_line_diff(
+                                &self.local_content_cache.get(&rel_str).map(|s| s.as_str()).unwrap_or(""),
+                                &content,
+                            );
+                            let diff_str = diff_val.to_string();
+                            if diff_str.len() <= 10240 { Some(diff_val) } else { None }
+                        } else {
+                            None
+                        };
+                        self.local_hashes.insert(rel_str.clone(), new_hash);
+                        self.local_content_cache.insert(rel_str.clone(), content.clone());
+                        let result = self.api.put_file_with_diff(
+                            &rel_str,
+                            &content,
+                            old_hash.as_deref(),
+                            diff.as_ref(),
+                        );
+                        if result.is_ok() {
                             println!("⬆️ {}", rel_str);
                         }
                     }
@@ -706,9 +927,98 @@ impl SyncEngine {
             } else {
                 if self.api.delete_file(&rel_str).is_ok() {
                     self.local_hashes.remove(&rel_str);
+                    self.local_content_cache.remove(&rel_str);
                     println!("🗑️ {}", rel_str);
                 }
             }
+        }
+    }
+
+    /// Handle an RTDB event (from SSE subscription)
+    fn handle_rtdb_event(&mut self, entry: &RtdbFileEntry) {
+        match entry.action.as_str() {
+            "save" => {
+                let local_file = self.local_path.join(&entry.path);
+                let local_hash = self.local_hashes.get(&entry.path).cloned();
+
+                // diff 적용 가능: 로컬 해시 == oldHash
+                if let (Some(old_hash), Some(diff), Some(ref lh)) = (&entry.old_hash, &entry.diff, &local_hash) {
+                    if lh == old_hash {
+                        if let Ok(old_content) = fs::read_to_string(&local_file) {
+                            if let Some(new_content) = apply_line_diff(&old_content, diff) {
+                                if let Some(parent) = local_file.parent() {
+                                    fs::create_dir_all(parent).ok();
+                                }
+                                if fs::write(&local_file, &new_content).is_ok() {
+                                    let hash = Self::simple_hash(&new_content);
+                                    self.local_hashes.insert(entry.path.clone(), hash);
+                                    self.local_content_cache.insert(entry.path.clone(), new_content);
+                                    println!("⬇️ {} (diff applied)", entry.path);
+                                    return;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // fallback: R2에서 전체 파일 fetch
+                self.fetch_from_r2(&entry.path);
+            }
+            "create" => {
+                self.fetch_from_r2(&entry.path);
+            }
+            "delete" => {
+                let local_file = self.local_path.join(&entry.path);
+                if local_file.exists() {
+                    if fs::remove_file(&local_file).is_ok() {
+                        self.local_hashes.remove(&entry.path);
+                        self.local_content_cache.remove(&entry.path);
+                        println!("🗑️ {} (rtdb)", entry.path);
+                    }
+                }
+            }
+            "rename" => {
+                if let Some(old_path) = &entry.old_path {
+                    let old_file = self.local_path.join(old_path);
+                    let new_file = self.local_path.join(&entry.path);
+                    if old_file.exists() {
+                        if let Some(parent) = new_file.parent() {
+                            fs::create_dir_all(parent).ok();
+                        }
+                        if fs::rename(&old_file, &new_file).is_ok() {
+                            // 해시 이전
+                            if let Some(h) = self.local_hashes.remove(old_path) {
+                                self.local_hashes.insert(entry.path.clone(), h);
+                            }
+                            if let Some(c) = self.local_content_cache.remove(old_path) {
+                                self.local_content_cache.insert(entry.path.clone(), c);
+                            }
+                            println!("📝 {} → {} (rtdb)", old_path, entry.path);
+                        }
+                    } else {
+                        // 이전 파일 없으면 R2에서 fetch
+                        self.fetch_from_r2(&entry.path);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn fetch_from_r2(&mut self, path: &str) {
+        match self.api.get_file(path) {
+            Ok(content) => {
+                let local_file = self.local_path.join(path);
+                if let Some(parent) = local_file.parent() {
+                    fs::create_dir_all(parent).ok();
+                }
+                if fs::write(&local_file, &content.content).is_ok() {
+                    self.local_hashes.insert(path.to_string(), Self::simple_hash(&content.content));
+                    self.local_content_cache.insert(path.to_string(), content.content);
+                    println!("⬇️ {} (r2)", path);
+                }
+            }
+            Err(e) => log::error!("R2 fetch 실패 {}: {}", path, e),
         }
     }
 }
@@ -722,12 +1032,78 @@ fn parse_oauth_callback(url_str: &str) -> Option<(String, String)> {
     if url.host_str() != Some("callback") {
         return None;
     }
-    
+
     let params: HashMap<_, _> = url.query_pairs().collect();
     let username = params.get("username")?.to_string();
     let token = params.get("token")?.to_string();
-    
+
     Some((username, token))
+}
+
+fn log_to_file(msg: &str) {
+    use std::io::Write;
+    let log_path = ProjectDirs::from("com", "mdflare", "agent")
+        .map(|p| {
+            let dir = p.config_dir().to_path_buf();
+            fs::create_dir_all(&dir).ok();
+            dir.join("agent.log")
+        })
+        .unwrap_or_else(|| PathBuf::from("/tmp/mdflare-agent.log"));
+    if let Ok(mut f) = fs::OpenOptions::new().create(true).append(true).open(&log_path) {
+        let now = chrono::Local::now().format("%H:%M:%S%.3f");
+        writeln!(f, "[{}] {}", now, msg).ok();
+    }
+}
+
+fn handle_url_callback(url: &str) -> bool {
+    log_to_file(&format!("handle_url_callback: {}", url));
+
+    if !url.starts_with("mdflare://") {
+        log_to_file("  → not mdflare:// scheme, skip");
+        return false;
+    }
+    if let Some((username, token)) = parse_oauth_callback(url) {
+        // 이미 같은 토큰이 저장되어 있으면 스킵 (재시작 시 URL 재전달 방지)
+        let existing = Config::load();
+        log_to_file(&format!("  → existing token: [{}...]", &existing.api_token.get(..16).unwrap_or("empty")));
+        log_to_file(&format!("  → new token:      [{}...]", &token.get(..16).unwrap_or("empty")));
+
+        if existing.api_token == token {
+            log_to_file("  → SKIP: same token already saved");
+            return true;
+        }
+
+        log_to_file(&format!("  → login success: {}", username));
+
+        let mut config = existing;
+        config.storage_mode = StorageMode::Cloud;
+        config.username = username;
+        config.api_token = token;
+
+        if config.local_path.is_empty() {
+            config.local_path = dirs::document_dir()
+                .map(|d| d.join("MDFlare"))
+                .unwrap_or_default()
+                .to_string_lossy()
+                .to_string();
+        }
+
+        fs::create_dir_all(&config.local_path).ok();
+        config.save();
+        log_to_file(&format!("  → config saved: {} ({})", config.username, config.local_path));
+
+        // 2초 딜레이 후 재시작 (URL 재전달 방지)
+        log_to_file("  → scheduling delayed restart");
+        std::process::Command::new("sh")
+            .args(["-c", "sleep 2 && open -a 'MDFlare Agent'"])
+            .spawn()
+            .ok();
+
+        log_to_file("  → exiting");
+        std::process::exit(0);
+    }
+    log_to_file("  → parse_oauth_callback returned None");
+    false
 }
 
 #[cfg(windows)]
@@ -756,9 +1132,57 @@ fn register_url_scheme() {}
 // Tray App (Cloud 모드)
 // ============================================================================
 
-fn load_icon() -> Icon {
+fn load_icon_active() -> Icon {
+    // 밝은 주황색 - 동기화 연결됨
     let rgba: Vec<u8> = (0..16*16).flat_map(|_| vec![255u8, 100, 50, 255]).collect();
     Icon::from_rgba(rgba, 16, 16).expect("Failed to create icon")
+}
+
+fn load_icon_setup() -> Icon {
+    // 구름 + 금지 표시 (22x22)
+    let size = 22u32;
+    let mut rgba = vec![0u8; (size * size * 4) as usize];
+
+    for y in 0..size {
+        for x in 0..size {
+            let idx = ((y * size + x) * 4) as usize;
+            let fx = x as f32 + 0.5;
+            let fy = y as f32 + 0.5;
+
+            let cx = 11.0f32;
+            let cy = 11.0f32;
+            let dist = ((fx - cx).powi(2) + (fy - cy).powi(2)).sqrt();
+
+            // 구름 shape: 원 3개 합집합
+            let is_cloud = {
+                let main = (fx - 11.0).powi(2) + (fy - 13.0).powi(2) < 49.0;
+                let top_l = (fx - 8.0).powi(2) + (fy - 9.0).powi(2) < 20.0;
+                let top_r = (fx - 14.5).powi(2) + (fy - 10.0).powi(2) < 12.0;
+                main || top_l || top_r
+            };
+
+            // 금지 원형 테두리 (두께 ~2px)
+            let is_circle = dist >= 9.0 && dist <= 11.0;
+
+            // 대각선 (좌상→우하)
+            let line_dist = (fy - fx).abs() / std::f32::consts::SQRT_2;
+            let is_line = line_dist < 1.5 && dist < 9.0;
+
+            if is_circle || is_line {
+                rgba[idx] = 210;
+                rgba[idx + 1] = 50;
+                rgba[idx + 2] = 50;
+                rgba[idx + 3] = 255;
+            } else if is_cloud {
+                rgba[idx] = 150;
+                rgba[idx + 1] = 155;
+                rgba[idx + 2] = 160;
+                rgba[idx + 3] = 200;
+            }
+        }
+    }
+
+    Icon::from_rgba(rgba, size, size).expect("Failed to create setup icon")
 }
 
 fn shorten_path(path: &str) -> String {
@@ -800,10 +1224,10 @@ fn run_cloud_tray_app(config: Config) {
     let _tray = TrayIconBuilder::new()
         .with_menu(Box::new(menu))
         .with_tooltip("MDFlare Agent (Cloud)")
-        .with_icon(load_icon())
+        .with_icon(load_icon_active())
         .build()
         .expect("Failed to create tray icon");
-    
+
     let engine = Arc::new(Mutex::new(SyncEngine::new(&config)));
     let engine_clone = engine.clone();
     let local_path = config.local_path.clone();
@@ -829,7 +1253,32 @@ fn run_cloud_tray_app(config: Config) {
         }
     });
     
-    // 주기적 동기화
+    // RTDB SSE 구독 (실시간 변경 감지)
+    let engine_rtdb = engine.clone();
+    let config_for_rtdb = config.clone();
+    thread::spawn(move || {
+        let api = ApiClient::new(
+            &config_for_rtdb.api_base,
+            &config_for_rtdb.username,
+            &config_for_rtdb.api_token,
+        );
+        match api.get_sync_config() {
+            Ok(rtdb_config) => {
+                println!("🔌 RTDB 접속 정보 수신: {}", rtdb_config.user_id);
+                start_rtdb_subscription(
+                    rtdb_config.rtdb_url,
+                    rtdb_config.rtdb_auth,
+                    rtdb_config.user_id,
+                    engine_rtdb,
+                );
+            }
+            Err(e) => {
+                eprintln!("⚠️ RTDB 접속 정보 조회 실패: {} (폴링만 사용)", e);
+            }
+        }
+    });
+
+    // 주기적 동기화 (fallback)
     let engine_timer = engine.clone();
     thread::spawn(move || {
         loop {
@@ -839,7 +1288,7 @@ fn run_cloud_tray_app(config: Config) {
             }
         }
     });
-    
+
     // 초기 동기화
     if let Ok(mut eng) = engine.lock() {
         match eng.full_sync() {
@@ -847,7 +1296,7 @@ fn run_cloud_tray_app(config: Config) {
             Err(e) => eprintln!("❌ 동기화 실패: {}", e),
         }
     }
-    
+
     let config_for_menu = config.clone();
     let menu_receiver = MenuEvent::receiver();
     
@@ -870,8 +1319,13 @@ fn run_cloud_tray_app(config: Config) {
         }
     });
     
-    event_loop.run(move |_event, _, control_flow| {
+    event_loop.run(move |event, _, control_flow| {
         *control_flow = ControlFlow::Wait;
+        if let Event::Opened { urls } = event {
+            for url in urls {
+                handle_url_callback(url.as_str());
+            }
+        }
     });
 }
 
@@ -908,7 +1362,7 @@ fn run_private_vault_tray_app(config: Config) {
     let _tray = TrayIconBuilder::new()
         .with_menu(Box::new(menu))
         .with_tooltip("MDFlare Agent (Private Vault)")
-        .with_icon(load_icon())
+        .with_icon(load_icon_active())
         .build()
         .expect("Failed to create tray icon");
     
@@ -959,8 +1413,622 @@ fn run_private_vault_tray_app(config: Config) {
         }
     });
     
-    event_loop.run(move |_event, _, control_flow| {
+    event_loop.run(move |event, _, control_flow| {
         *control_flow = ControlFlow::Wait;
+        if let Event::Opened { urls } = event {
+            for url in urls {
+                handle_url_callback(url.as_str());
+            }
+        }
+    });
+}
+
+// ============================================================================
+// Setup Tray App (미설정 상태)
+// ============================================================================
+
+fn build_cloud_menu(config: &Config) -> (Menu, muda::MenuId, muda::MenuId, muda::MenuId, muda::MenuId) {
+    let menu = Menu::new();
+    let mode_item = MenuItem::new("☁️ Cloud 모드", false, None);
+    let user_item = MenuItem::new(format!("👤 {}", config.username), false, None);
+    let path_item = MenuItem::new(format!("📁 {}", shorten_path(&config.local_path)), false, None);
+    let sync_item = MenuItem::new("🔄 지금 동기화", true, None);
+    let folder_item = MenuItem::new("📂 폴더 열기", true, None);
+    let web_item = MenuItem::new("🌐 웹에서 열기", true, None);
+    let quit_item = MenuItem::new("종료", true, None);
+
+    let sync_id = sync_item.id().clone();
+    let folder_id = folder_item.id().clone();
+    let web_id = web_item.id().clone();
+    let quit_id = quit_item.id().clone();
+
+    menu.append(&mode_item).ok();
+    menu.append(&user_item).ok();
+    menu.append(&path_item).ok();
+    menu.append(&PredefinedMenuItem::separator()).ok();
+    menu.append(&sync_item).ok();
+    menu.append(&folder_item).ok();
+    menu.append(&web_item).ok();
+    menu.append(&PredefinedMenuItem::separator()).ok();
+    menu.append(&quit_item).ok();
+
+    (menu, sync_id, folder_id, web_id, quit_id)
+}
+
+/// Start RTDB SSE subscription in a background thread.
+/// Parses Firebase REST SSE events and dispatches to SyncEngine.
+fn start_rtdb_subscription(
+    rtdb_url: String,
+    rtdb_auth: String,
+    username: String,
+    engine: Arc<Mutex<SyncEngine>>,
+) {
+    thread::spawn(move || {
+        let client = reqwest::blocking::Client::builder()
+            .timeout(None)
+            .build()
+            .unwrap();
+
+        loop {
+            let url = format!(
+                "{}/mdflare/{}/files.json?auth={}",
+                rtdb_url, username, rtdb_auth
+            );
+            println!("🔌 RTDB SSE 연결 중...");
+
+            let resp = client
+                .get(&url)
+                .header("Accept", "text/event-stream")
+                .send();
+
+            match resp {
+                Ok(response) => {
+                    use std::io::{BufRead, BufReader};
+                    let reader = BufReader::new(response);
+                    let mut event_type = String::new();
+                    let mut data_buf = String::new();
+                    let mut first_put = true; // 첫 "put"은 전체 스냅샷 (무시)
+
+                    println!("✅ RTDB SSE 연결됨");
+
+                    for line in reader.lines() {
+                        match line {
+                            Ok(line) => {
+                                if line.starts_with("event:") {
+                                    event_type = line[6..].trim().to_string();
+                                } else if line.starts_with("data:") {
+                                    data_buf = line[5..].trim().to_string();
+                                } else if line.is_empty() && !event_type.is_empty() {
+                                    // 이벤트 완료 → 처리
+                                    if event_type == "put" || event_type == "patch" {
+                                        if first_put && event_type == "put" {
+                                            first_put = false;
+                                            // 첫 put은 전체 스냅샷, 스킵
+                                            event_type.clear();
+                                            data_buf.clear();
+                                            continue;
+                                        }
+                                        handle_sse_data(&data_buf, &engine);
+                                    } else if event_type == "keep-alive" {
+                                        // ignore
+                                    }
+                                    event_type.clear();
+                                    data_buf.clear();
+                                }
+                            }
+                            Err(e) => {
+                                eprintln!("⚠️ RTDB SSE 읽기 오류: {}", e);
+                                break;
+                            }
+                        }
+                    }
+
+                    eprintln!("⚠️ RTDB SSE 연결 끊어짐, 5초 후 재연결...");
+                }
+                Err(e) => {
+                    eprintln!("⚠️ RTDB SSE 연결 실패: {}, 5초 후 재시도...", e);
+                }
+            }
+
+            thread::sleep(Duration::from_secs(5));
+        }
+    });
+}
+
+/// Parse SSE data payload and dispatch to SyncEngine
+fn handle_sse_data(data: &str, engine: &Arc<Mutex<SyncEngine>>) {
+    // Firebase SSE data format: {"path":"/safeKey","data":{...}} or {"path":"/","data":{...}}
+    let parsed: Result<serde_json::Value, _> = serde_json::from_str(data);
+    let val = match parsed {
+        Ok(v) => v,
+        Err(_) => return,
+    };
+
+    let path = val.get("path").and_then(|p| p.as_str()).unwrap_or("");
+    let data_val = match val.get("data") {
+        Some(d) => d,
+        None => return,
+    };
+
+    if path == "/" {
+        // 루트 업데이트: 여러 파일 변경 가능 (각 키가 safeKey)
+        if let Some(obj) = data_val.as_object() {
+            for (_key, entry_val) in obj {
+                if let Ok(entry) = serde_json::from_value::<RtdbFileEntry>(entry_val.clone()) {
+                    if let Ok(mut eng) = engine.lock() {
+                        eng.handle_rtdb_event(&entry);
+                    }
+                }
+            }
+        }
+    } else {
+        // 개별 파일 변경: path = "/safeKey"
+        if data_val.is_null() {
+            // 삭제 이벤트: safeKey → path 복원
+            let safe_key = path.trim_start_matches('/');
+            let file_path = safe_key
+                .replace("_slash_", "/")
+                .replace("_dot_", ".");
+            let entry = RtdbFileEntry {
+                path: file_path,
+                action: "delete".to_string(),
+                hash: None,
+                old_hash: None,
+                diff: None,
+                old_path: None,
+                modified: None,
+                size: None,
+            };
+            if let Ok(mut eng) = engine.lock() {
+                eng.handle_rtdb_event(&entry);
+            }
+        } else if let Ok(entry) = serde_json::from_value::<RtdbFileEntry>(data_val.clone()) {
+            if let Ok(mut eng) = engine.lock() {
+                eng.handle_rtdb_event(&entry);
+            }
+        }
+    }
+}
+
+fn start_cloud_sync(config: &Config) -> Arc<Mutex<SyncEngine>> {
+    let engine = Arc::new(Mutex::new(SyncEngine::new(config)));
+    let local_path = config.local_path.clone();
+
+    // 파일 감시
+    let engine_watcher = engine.clone();
+    let watch_path = local_path.clone();
+    thread::spawn(move || {
+        let (tx, rx) = std::sync::mpsc::channel();
+        let mut debouncer = new_debouncer(Duration::from_secs(1), tx).unwrap();
+        debouncer.watcher().watch(Path::new(&watch_path), RecursiveMode::Recursive).ok();
+        for events in rx.iter().flatten() {
+            for event in events {
+                if event.kind == DebouncedEventKind::Any {
+                    if event.path.extension().map_or(false, |e| e == "md") {
+                        if let Ok(mut eng) = engine_watcher.lock() {
+                            eng.handle_local_change(&event.path);
+                        }
+                    }
+                }
+            }
+        }
+    });
+
+    // RTDB SSE 구독 (실시간 변경 감지)
+    let engine_rtdb = engine.clone();
+    let config_for_rtdb = config.clone();
+    thread::spawn(move || {
+        // sync-config에서 RTDB 접속 정보 가져오기
+        let api = ApiClient::new(
+            &config_for_rtdb.api_base,
+            &config_for_rtdb.username,
+            &config_for_rtdb.api_token,
+        );
+        match api.get_sync_config() {
+            Ok(rtdb_config) => {
+                println!("🔌 RTDB 접속 정보 수신: {}", rtdb_config.user_id);
+                start_rtdb_subscription(
+                    rtdb_config.rtdb_url,
+                    rtdb_config.rtdb_auth,
+                    rtdb_config.user_id,
+                    engine_rtdb,
+                );
+            }
+            Err(e) => {
+                eprintln!("⚠️ RTDB 접속 정보 조회 실패: {} (폴링만 사용)", e);
+            }
+        }
+    });
+
+    // 주기적 동기화 (fallback: RTDB 연결 끊김 대비)
+    let engine_timer = engine.clone();
+    thread::spawn(move || {
+        loop {
+            thread::sleep(Duration::from_secs(30));
+            if let Ok(mut eng) = engine_timer.lock() {
+                eng.full_sync().ok();
+            }
+        }
+    });
+
+    // 초기 동기화
+    if let Ok(mut eng) = engine.lock() {
+        match eng.full_sync() {
+            Ok((d, u)) => println!("✅ 초기 동기화 완료: ⬇️{} ⬆️{}", d, u),
+            Err(e) => eprintln!("❌ 동기화 실패: {}", e),
+        }
+    }
+
+    engine
+}
+
+/// 앱 상태: setup → cloud_waiting → cloud / vault
+#[derive(Debug, Clone, PartialEq)]
+enum AppPhase {
+    Setup,         // 미연결 - "동기화 시작" 메뉴 표시
+    CloudWaiting,  // Cloud 선택 후 브라우저 로그인 대기
+    Cloud,         // Cloud 동기화 중
+    Vault,         // Private Vault 동작 중
+}
+
+const MODE_SELECTION_HTML: &str = r#"<!DOCTYPE html>
+<html><head><meta charset="utf-8"><style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;background:#f5f5f7;padding:32px 24px 24px;color:#1d1d1f;-webkit-user-select:none;user-select:none}
+h1{font-size:18px;font-weight:600;text-align:center;margin-bottom:20px}
+.cards{display:flex;flex-direction:column;gap:12px}
+.card{background:#fff;border-radius:12px;padding:16px 20px;cursor:pointer;border:2px solid transparent;transition:all .15s;box-shadow:0 1px 3px rgba(0,0,0,.08)}
+.card:hover{border-color:#0071e3;box-shadow:0 2px 8px rgba(0,113,227,.15)}
+.card:active{transform:scale(.98)}
+.card-header{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+.card-icon{font-size:24px}
+.card-title{font-size:15px;font-weight:600}
+.card-desc{font-size:12px;color:#86868b;line-height:1.6}
+.cancel{display:block;width:100%;margin-top:16px;padding:8px;background:none;border:none;color:#86868b;font-size:13px;cursor:pointer;border-radius:8px;text-align:center}
+.cancel:hover{background:#e8e8ed}
+</style></head><body>
+<h1>동기화 방식 선택</h1>
+<div class="cards">
+  <div class="card" onclick="choose('cloud')">
+    <div class="card-header"><span class="card-icon">☁️</span><span class="card-title">Cloud</span></div>
+    <div class="card-desc">온라인 저장소에 파일을 동기화합니다.<br>에이전트 PC가 꺼져 있어도 온라인에서 편집할 수 있습니다.</div>
+  </div>
+  <div class="card" onclick="choose('vault')">
+    <div class="card-header"><span class="card-icon">🔐</span><span class="card-title">Private Vault</span></div>
+    <div class="card-desc">파일을 내 PC에만 보관합니다. (온라인 저장소 미사용)<br>에이전트가 꺼지면 온라인 에디터를 이용할 수 없습니다.</div>
+  </div>
+</div>
+<div class="cancel" onclick="choose('cancel')">취소</div>
+<script>function choose(m){window.ipc.postMessage(m)}</script>
+</body></html>"#;
+
+fn run_setup_tray_app() {
+    let event_loop = EventLoop::new();
+
+    // 초기 메뉴: 미설정 상태
+    let menu = Menu::new();
+    let start_item = MenuItem::new("시작하기", true, None);
+    let quit_item = MenuItem::new("종료", true, None);
+
+    menu.append(&start_item).ok();
+    menu.append(&PredefinedMenuItem::separator()).ok();
+    menu.append(&quit_item).ok();
+
+    let start_id = start_item.id().clone();
+    let quit_id = quit_item.id().clone();
+
+    let tray = TrayIconBuilder::new()
+        .with_menu(Box::new(menu))
+        .with_tooltip("MDFlare Agent")
+        .with_icon(load_icon_setup())
+        .build()
+        .expect("Failed to create tray icon");
+
+    let tray = std::cell::RefCell::new(tray);
+
+    // 상태 공유
+    let phase = Arc::new(Mutex::new(AppPhase::Setup));
+    let cloud_state: Arc<Mutex<Option<(Config, Arc<Mutex<SyncEngine>>)>>> = Arc::new(Mutex::new(None));
+    let cloud_menu_ids: Arc<Mutex<Option<(muda::MenuId, muda::MenuId, muda::MenuId, muda::MenuId)>>> = Arc::new(Mutex::new(None));
+    let vault_menu_ids: Arc<Mutex<Option<(muda::MenuId, muda::MenuId, muda::MenuId)>>> = Arc::new(Mutex::new(None));
+    let needs_show_mode_dialog: Arc<Mutex<bool>> = Arc::new(Mutex::new(false));
+    let dialog_choice: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
+
+    let phase_loop = phase.clone();
+    let cloud_state_loop = cloud_state.clone();
+    let cloud_menu_ids_loop = cloud_menu_ids.clone();
+    let vault_menu_ids_loop = vault_menu_ids.clone();
+
+    let menu_receiver = MenuEvent::receiver();
+    let phase_menu = phase.clone();
+    let cloud_state_menu = cloud_state.clone();
+    let cloud_menu_ids_menu = cloud_menu_ids.clone();
+    let vault_menu_ids_menu = vault_menu_ids.clone();
+    let needs_show_mode_dialog_menu = needs_show_mode_dialog.clone();
+
+    thread::spawn(move || {
+        loop {
+            if let Ok(event) = menu_receiver.recv() {
+                let current_phase = phase_menu.lock().unwrap().clone();
+
+                match current_phase {
+                    AppPhase::Setup => {
+                        if event.id == start_id {
+                            *needs_show_mode_dialog_menu.lock().unwrap() = true;
+                        } else if event.id == quit_id {
+                            std::process::exit(0);
+                        }
+                    }
+                    AppPhase::CloudWaiting => {
+                        if event.id == quit_id {
+                            std::process::exit(0);
+                        }
+                    }
+                    AppPhase::Cloud => {
+                        if let Some((sync_id, folder_id, web_id, quit_id)) = cloud_menu_ids_menu.lock().unwrap().as_ref() {
+                            if &event.id == quit_id {
+                                std::process::exit(0);
+                            } else if &event.id == sync_id {
+                                if let Some((_, engine)) = cloud_state_menu.lock().unwrap().as_ref() {
+                                    if let Ok(mut eng) = engine.lock() {
+                                        eng.full_sync().ok();
+                                    }
+                                }
+                            } else if &event.id == folder_id {
+                                if let Some((config, _)) = cloud_state_menu.lock().unwrap().as_ref() {
+                                    open::that(&config.local_path).ok();
+                                }
+                            } else if &event.id == web_id {
+                                if let Some((config, _)) = cloud_state_menu.lock().unwrap().as_ref() {
+                                    let url = format!("{}/{}", config.api_base, config.username);
+                                    open::that(url).ok();
+                                }
+                            }
+                        }
+                    }
+                    AppPhase::Vault => {
+                        if let Some((folder_id, copy_token_id, quit_id)) = vault_menu_ids_menu.lock().unwrap().as_ref() {
+                            if &event.id == quit_id {
+                                std::process::exit(0);
+                            } else if &event.id == folder_id {
+                                if let Some((config, _)) = cloud_state_menu.lock().unwrap().as_ref() {
+                                    open::that(&config.local_path).ok();
+                                }
+                            } else if &event.id == copy_token_id {
+                                // 클립보드 복사
+                                let config = Config::load();
+                                let conn_token = generate_connection_token(config.server_port, &config.server_token);
+                                #[cfg(target_os = "macos")]
+                                {
+                                    std::process::Command::new("pbcopy")
+                                        .stdin(std::process::Stdio::piped())
+                                        .spawn()
+                                        .and_then(|mut child| {
+                                            use std::io::Write;
+                                            if let Some(stdin) = child.stdin.as_mut() {
+                                                stdin.write_all(conn_token.as_bytes()).ok();
+                                            }
+                                            child.wait()
+                                        })
+                                        .ok();
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    });
+
+    // 트레이 메뉴 업데이트 요청용 플래그
+    let needs_cloud_update: Arc<Mutex<Option<Config>>> = Arc::new(Mutex::new(None));
+    let needs_vault_update: Arc<Mutex<Option<Config>>> = Arc::new(Mutex::new(None));
+    let needs_cloud_waiting_update: Arc<Mutex<bool>> = Arc::new(Mutex::new(false));
+    let needs_cloud_update_loop = needs_cloud_update.clone();
+    let needs_vault_update_loop = needs_vault_update.clone();
+    let needs_cloud_waiting_update_loop = needs_cloud_waiting_update.clone();
+
+    // phase 변경을 감지해서 tray 업데이트 플래그 세팅하는 감시 스레드
+    let phase_watcher = phase.clone();
+    let needs_vault_update_watcher = needs_vault_update.clone();
+    let needs_cloud_waiting_update_watcher = needs_cloud_waiting_update.clone();
+    thread::spawn(move || {
+        let mut last_phase = AppPhase::Setup;
+        loop {
+            thread::sleep(Duration::from_millis(100));
+            let current = phase_watcher.lock().unwrap().clone();
+            if current != last_phase {
+                match &current {
+                    AppPhase::CloudWaiting => {
+                        *needs_cloud_waiting_update_watcher.lock().unwrap() = true;
+                    }
+                    AppPhase::Vault => {
+                        let config = Config::load();
+                        *needs_vault_update_watcher.lock().unwrap() = Some(config);
+                    }
+                    _ => {}
+                }
+                last_phase = current;
+            }
+        }
+    });
+
+    let needs_show_mode_dialog_loop = needs_show_mode_dialog.clone();
+    let dialog_choice_loop = dialog_choice.clone();
+    let mut mode_dialog_webview: Option<wry::WebView> = None;
+    let mut mode_dialog_window: Option<tao::window::Window> = None;
+
+    event_loop.run(move |event, target, control_flow| {
+        *control_flow = ControlFlow::WaitUntil(
+            std::time::Instant::now() + Duration::from_millis(100)
+        );
+
+        // 모드 선택 다이얼로그 표시
+        {
+            let mut flag = needs_show_mode_dialog_loop.lock().unwrap();
+            if *flag {
+                *flag = false;
+                let window = tao::window::WindowBuilder::new()
+                    .with_title("MDFlare")
+                    .with_inner_size(tao::dpi::LogicalSize::new(420.0, 360.0))
+                    .with_resizable(false)
+                    .build(target)
+                    .expect("Failed to create dialog window");
+
+                let choice_clone = dialog_choice_loop.clone();
+                let webview = wry::WebViewBuilder::new(&window)
+                    .with_html(MODE_SELECTION_HTML)
+                    .with_ipc_handler(move |req| {
+                        *choice_clone.lock().unwrap() = Some(req.body().clone());
+                    })
+                    .build()
+                    .expect("Failed to create webview");
+
+                mode_dialog_window = Some(window);
+                mode_dialog_webview = Some(webview);
+            }
+        }
+
+        // 다이얼로그 선택 결과 처리
+        if let Some(choice) = dialog_choice_loop.lock().unwrap().take() {
+            mode_dialog_webview.take();
+            mode_dialog_window.take();
+
+            match choice.as_str() {
+                "cloud" => {
+                    let config = Config::load();
+                    let auth_url = format!("{}/auth/agent", config.api_base);
+                    open::that(&auth_url).ok();
+                    *phase_loop.lock().unwrap() = AppPhase::CloudWaiting;
+                    log_to_file("setup: cloud selected → waiting for browser login");
+                }
+                "vault" => {
+                    let mut config = Config::load();
+                    config.storage_mode = StorageMode::PrivateVault;
+                    config.local_path = pick_folder("Private Vault 폴더 선택");
+                    fs::create_dir_all(&config.local_path).ok();
+                    config.save();
+                    *phase_loop.lock().unwrap() = AppPhase::Vault;
+                    log_to_file(&format!("setup: vault selected → {}", config.local_path));
+
+                    let config_for_server = config.clone();
+                    thread::spawn(move || {
+                        let rt = tokio::runtime::Runtime::new().unwrap();
+                        rt.block_on(run_private_vault_server(config_for_server));
+                    });
+                }
+                _ => {} // cancel
+            }
+        }
+
+        // 트레이 업데이트 폴링
+        if let Some(config) = needs_cloud_update_loop.lock().unwrap().take() {
+            let (cloud_menu, sync_id, folder_id, web_id, quit_id) = build_cloud_menu(&config);
+            tray.borrow_mut().set_menu(Some(Box::new(cloud_menu)));
+            let _ = tray.borrow_mut().set_tooltip(Some(&format!("MDFlare Agent (☁️ {})", config.username)));
+            tray.borrow_mut().set_icon(Some(load_icon_active())).ok();
+
+            let engine = start_cloud_sync(&config);
+            *cloud_state_loop.lock().unwrap() = Some((config, engine));
+            *cloud_menu_ids_loop.lock().unwrap() = Some((sync_id, folder_id, web_id, quit_id));
+            *phase_loop.lock().unwrap() = AppPhase::Cloud;
+        }
+
+        if let Some(config) = needs_vault_update_loop.lock().unwrap().take() {
+            let vault_menu = Menu::new();
+            let mode_item = MenuItem::new("🔐 Private Vault 모드", false, None);
+            let port_item = MenuItem::new(format!("🌐 http://localhost:{}", config.server_port), false, None);
+            let path_item = MenuItem::new(format!("📁 {}", shorten_path(&config.local_path)), false, None);
+            let folder_item = MenuItem::new("📂 폴더 열기", true, None);
+            let copy_token_item = MenuItem::new("📋 연결 토큰 복사", true, None);
+            let quit_item = MenuItem::new("종료", true, None);
+
+            let folder_id = folder_item.id().clone();
+            let copy_token_id = copy_token_item.id().clone();
+            let quit_id = quit_item.id().clone();
+
+            vault_menu.append(&mode_item).ok();
+            vault_menu.append(&port_item).ok();
+            vault_menu.append(&path_item).ok();
+            vault_menu.append(&PredefinedMenuItem::separator()).ok();
+            vault_menu.append(&folder_item).ok();
+            vault_menu.append(&copy_token_item).ok();
+            vault_menu.append(&PredefinedMenuItem::separator()).ok();
+            vault_menu.append(&quit_item).ok();
+
+            tray.borrow_mut().set_menu(Some(Box::new(vault_menu)));
+            let _ = tray.borrow_mut().set_tooltip(Some("MDFlare Agent (🔐 Private Vault)"));
+            tray.borrow_mut().set_icon(Some(load_icon_active())).ok();
+
+            *vault_menu_ids_loop.lock().unwrap() = Some((folder_id, copy_token_id, quit_id));
+        }
+
+        {
+            let mut flag = needs_cloud_waiting_update_loop.lock().unwrap();
+            if *flag {
+                *flag = false;
+                let waiting_menu = Menu::new();
+                let status_item = MenuItem::new("☁️ 브라우저에서 로그인 중...", false, None);
+                let quit_item = MenuItem::new("종료", true, None);
+                waiting_menu.append(&status_item).ok();
+                waiting_menu.append(&PredefinedMenuItem::separator()).ok();
+                waiting_menu.append(&quit_item).ok();
+                tray.borrow_mut().set_menu(Some(Box::new(waiting_menu)));
+            }
+        }
+
+        // 이벤트 처리
+        match event {
+            Event::WindowEvent { event: tao::event::WindowEvent::CloseRequested, .. } => {
+                // 모드 선택 다이얼로그 닫기 (X 버튼)
+                mode_dialog_webview.take();
+                mode_dialog_window.take();
+            }
+            Event::Opened { urls } => {
+                for url in urls {
+                    let url_str = url.as_str();
+                    if !url_str.starts_with("mdflare://") {
+                        continue;
+                    }
+                    log_to_file(&format!("setup_tray: received URL {}", url_str));
+
+                    if let Some((username, token)) = parse_oauth_callback(url_str) {
+                        let existing = Config::load();
+                        if existing.api_token == token {
+                            log_to_file("setup_tray: duplicate token, skip");
+                            continue;
+                        }
+
+                        let mut config = existing;
+                        config.storage_mode = StorageMode::Cloud;
+                        config.username = username;
+                        config.api_token = token;
+                        if config.local_path.is_empty() {
+                            config.local_path = dirs::document_dir()
+                                .map(|d| d.join("MDFlare"))
+                                .unwrap_or_default()
+                                .to_string_lossy()
+                                .to_string();
+                        }
+                        fs::create_dir_all(&config.local_path).ok();
+                        config.save();
+
+                        log_to_file(&format!("setup_tray: logged in as {} → switching to cloud tray", config.username));
+
+                        let (cloud_menu, sync_id, folder_id, web_id, quit_id) = build_cloud_menu(&config);
+                        tray.borrow_mut().set_menu(Some(Box::new(cloud_menu)));
+                        let _ = tray.borrow_mut().set_tooltip(Some(&format!("MDFlare Agent (☁️ {})", config.username)));
+                        tray.borrow_mut().set_icon(Some(load_icon_active())).ok();
+
+                        let engine = start_cloud_sync(&config);
+                        *cloud_state_loop.lock().unwrap() = Some((config, engine));
+                        *cloud_menu_ids_loop.lock().unwrap() = Some((sync_id, folder_id, web_id, quit_id));
+                        *phase_loop.lock().unwrap() = AppPhase::Cloud;
+                    }
+                }
+            }
+            _ => {}
+        }
     });
 }
 
@@ -968,41 +2036,44 @@ fn run_private_vault_tray_app(config: Config) {
 // Main
 // ============================================================================
 
+fn pick_folder(title: &str) -> String {
+    let default_path = dirs::document_dir()
+        .map(|d| d.join("MDFlare"))
+        .unwrap_or_default();
+
+    rfd::FileDialog::new()
+        .set_title(title)
+        .set_directory(&default_path)
+        .pick_folder()
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_else(|| default_path.to_string_lossy().to_string())
+}
+
+fn setup_private_vault(mut config: Config) {
+    config.storage_mode = StorageMode::PrivateVault;
+    config.local_path = pick_folder("Private Vault 폴더 선택");
+    fs::create_dir_all(&config.local_path).ok();
+    config.save();
+
+    let conn_token = generate_connection_token(config.server_port, &config.server_token);
+    println!("🔐 Private Vault 모드");
+    println!("📁 {}", config.local_path);
+    println!("🔑 연결 토큰: {}", conn_token);
+
+    run_private_vault_tray_app(config);
+}
+
 fn main() {
     env_logger::init();
-    
+
     let args: Vec<String> = std::env::args().collect();
-    
-    // 커맨드라인 모드 변경
+
+    // CLI 인자 처리
     if args.len() > 1 {
         match args[1].as_str() {
             "--private-vault" | "-p" => {
-                let mut config = Config::load();
-                config.storage_mode = StorageMode::PrivateVault;
-                
-                // 폴더 선택
-                if config.local_path.is_empty() {
-                    let default_path = dirs::document_dir()
-                        .map(|d| d.join("MDFlare"))
-                        .unwrap_or_default();
-                    
-                    config.local_path = rfd::FileDialog::new()
-                        .set_title("Private Vault 폴더 선택")
-                        .set_directory(&default_path)
-                        .pick_folder()
-                        .map(|p| p.to_string_lossy().to_string())
-                        .unwrap_or_else(|| default_path.to_string_lossy().to_string());
-                }
-                
-                fs::create_dir_all(&config.local_path).ok();
-                config.save();
-                
-                let conn_token = generate_connection_token(config.server_port, &config.server_token);
-                println!("🔐 Private Vault 모드로 시작");
-                println!("📁 {}", config.local_path);
-                println!("🔑 연결 토큰: {}", conn_token);
-                
-                run_private_vault_tray_app(config);
+                let config = Config::load();
+                setup_private_vault(config);
                 return;
             }
             "--cloud" | "-c" => {
@@ -1012,80 +2083,47 @@ fn main() {
                 // 아래에서 처리
             }
             url if url.starts_with("mdflare://") => {
-                // OAuth 콜백 처리
-                if let Some((username, token)) = parse_oauth_callback(url) {
-                    println!("🎉 로그인 성공: {}", username);
-                    
-                    let mut config = Config::load();
-                    config.storage_mode = StorageMode::Cloud;
-                    config.username = username;
-                    config.api_token = token;
-                    
-                    if config.local_path.is_empty() {
-                        let default_path = dirs::document_dir()
-                            .map(|d| d.join("MDFlare"))
-                            .unwrap_or_default();
-                        
-                        config.local_path = rfd::FileDialog::new()
-                            .set_title("MDFlare 동기화 폴더 선택")
-                            .set_directory(&default_path)
-                            .pick_folder()
-                            .map(|p| p.to_string_lossy().to_string())
-                            .unwrap_or_else(|| default_path.to_string_lossy().to_string());
-                    }
-                    
-                    fs::create_dir_all(&config.local_path).ok();
-                    config.save();
-                    
-                    run_cloud_tray_app(config);
-                } else {
-                    eprintln!("❌ 잘못된 콜백 URL");
-                }
+                handle_url_callback(url);
                 return;
             }
             "--help" | "-h" => {
-                println!("MDFlare Agent - 크로스플랫폼 마크다운 동기화");
+                println!("MDFlare Agent - 마크다운 동기화");
                 println!();
                 println!("사용법:");
                 println!("  mdflare-agent              저장된 설정으로 시작");
-                println!("  mdflare-agent -p           Private Vault 모드로 시작");
-                println!("  mdflare-agent -c           Cloud 모드로 시작");
-                println!();
-                println!("옵션:");
-                println!("  -p, --private-vault   로컬 서버 모드 (클라우드 없음)");
-                println!("  -c, --cloud           클라우드 동기화 모드");
-                println!("  -h, --help            도움말");
+                println!("  mdflare-agent -p           Private Vault 모드");
+                println!("  mdflare-agent -c           Cloud 모드");
+                println!("  -h, --help                 도움말");
                 return;
             }
             _ => {}
         }
     }
-    
-    // URL scheme 등록 (Windows)
+
+    // Windows URL scheme 등록
     register_url_scheme();
-    
-    // 설정 로드
+
     let config = Config::load();
-    
-    match config.storage_mode {
-        StorageMode::PrivateVault => {
-            if !config.local_path.is_empty() {
-                println!("🔐 Private Vault 모드");
-                println!("📁 {}", config.local_path);
-                run_private_vault_tray_app(config);
-            } else {
-                println!("⚙️ 설정 필요 - mdflare-agent --private-vault 로 시작하세요");
-            }
-        }
-        StorageMode::Cloud => {
-            if config.is_configured() {
+    log_to_file(&format!("main: mode={:?} configured={} api_base={}", config.storage_mode, config.is_configured(), config.api_base));
+
+    if !config.is_configured() {
+        // 미설정 → 트레이에 미연결 아이콘 + "동기화 시작" 메뉴
+        log_to_file("main: not configured → setup tray");
+        run_setup_tray_app();
+    } else {
+        // 설정 완료 → 바로 동작
+        log_to_file(&format!("main: configured → starting {:?} mode", config.storage_mode));
+        match config.storage_mode {
+            StorageMode::Cloud => {
                 println!("☁️ Cloud 모드");
                 println!("👤 {}", config.username);
                 println!("📁 {}", config.local_path);
                 run_cloud_tray_app(config);
-            } else {
-                println!("⚙️ 설정 필요 - 브라우저에서 로그인하세요");
-                open::that("https://mdflare.com/auth/agent").ok();
+            }
+            StorageMode::PrivateVault => {
+                println!("🔐 Private Vault 모드");
+                println!("📁 {}", config.local_path);
+                run_private_vault_tray_app(config);
             }
         }
     }
