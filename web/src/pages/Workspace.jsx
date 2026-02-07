@@ -5,8 +5,9 @@ import { markdown } from '@codemirror/lang-markdown';
 import { EditorView } from '@codemirror/view';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { updateFileMeta, onFilesChanged, simpleHash, logout, auth } from '../firebase';
+import { updateFileMeta, deleteFileMeta, onFilesChanged, simpleHash, computeLineDiff, logout, auth } from '../firebase';
 import { getAppName } from '../components/AppTitle';
+import AgentStatus from '../components/AgentStatus';
 
 const API = '/api';
 const AUTO_SAVE_DELAY = 1000;
@@ -259,26 +260,34 @@ export default function Workspace({ user, isPrivateVault = false }) {
   const doSave = useCallback(async (fp, newContent) => {
     setSaveStatus('saving');
     try {
+      const oldHash = simpleHash(savedContent);
+      const newHash = simpleHash(newContent);
+      const diff = computeLineDiff(savedContent, newContent);
       const res = await fetch(buildApiUrl(`/file/${encodePath(fp)}`), {
         method: 'PUT',
         headers: await authHeaders(isPrivateVault),
-        body: JSON.stringify({ content: newContent })
+        body: JSON.stringify({ content: newContent, oldHash, diff })
       });
       const data = await res.json();
       if (data.saved) {
         setSavedContent(newContent);
         setSaveStatus('saved');
-        updateFileMeta(userId, fp, {
-          size: new Blob([newContent]).size,
-          hash: simpleHash(newContent)
-        }).catch(err => console.error('Firebase meta update failed:', err));
+        if (!isPrivateVault) {
+          updateFileMeta(userId, fp, {
+            size: new Blob([newContent]).size,
+            hash: newHash,
+            action: 'save',
+            oldHash,
+            diff
+          }).catch(err => console.error('Firebase meta update failed:', err));
+        }
         setTimeout(() => setSaveStatus(s => s === 'saved' ? 'idle' : s), 2000);
       }
     } catch (err) {
       console.error('Failed to save:', err);
       setSaveStatus('error');
     }
-  }, [userId]);
+  }, [userId, savedContent, isPrivateVault]);
 
   const handleChange = useCallback((val) => {
     setContent(val);
@@ -336,11 +345,19 @@ export default function Workspace({ user, isPrivateVault = false }) {
     const tid = addToast(`📄 "${fileName}" 생성 중...`, 'loading');
     setSidebarLoading(true);
     try {
+      const newContent = `# ${name.replace('.md', '')}\n\n`;
       await fetch(buildApiUrl(`/file/${encodePath(fp)}`), {
         method: 'PUT',
         headers: await authHeaders(isPrivateVault),
-        body: JSON.stringify({ content: `# ${name.replace('.md', '')}\n\n` })
+        body: JSON.stringify({ content: newContent })
       });
+      if (!isPrivateVault) {
+        updateFileMeta(userId, fp, {
+          size: new Blob([newContent]).size,
+          hash: simpleHash(newContent),
+          action: 'create'
+        }).catch(err => console.error('Firebase meta update failed:', err));
+      }
       await loadFiles();
       updateToast(tid, `📄 "${fileName}" 생성 완료!`, 'success');
       openFile(fp);
@@ -402,6 +419,15 @@ export default function Workspace({ user, isPrivateVault = false }) {
         headers: await authHeaders(isPrivateVault),
         body: JSON.stringify({ oldPath: sourcePath, newPath })
       });
+      if (!isPrivateVault) {
+        deleteFileMeta(userId, sourcePath).catch(err => console.error('Firebase delete old meta failed:', err));
+        updateFileMeta(userId, newPath, {
+          size: 0,
+          hash: '',
+          action: 'rename',
+          oldPath: sourcePath
+        }).catch(err => console.error('Firebase move meta failed:', err));
+      }
       await loadFiles();
       updateToast(tid, `📦 "${name}" 이동 완료!`, 'success');
       if (currentFile?.path === sourcePath) openFile(newPath);
@@ -430,6 +456,13 @@ export default function Workspace({ user, isPrivateVault = false }) {
         headers: await authHeaders(isPrivateVault),
         body: JSON.stringify({ content: '' })
       });
+      if (!isPrivateVault) {
+        updateFileMeta(userId, fp, {
+          size: 0,
+          hash: simpleHash(''),
+          action: 'create'
+        }).catch(err => console.error('Firebase meta update failed:', err));
+      }
       await loadFiles();
       updateToast(tid, `📁 "${name}" 폴더 생성 완료!`, 'success');
     } catch (err) {
@@ -454,6 +487,16 @@ export default function Workspace({ user, isPrivateVault = false }) {
         headers: await authHeaders(isPrivateVault),
         body: JSON.stringify({ oldPath, newPath })
       });
+      if (!isPrivateVault) {
+        // 이전 경로 RTDB 엔트리 삭제 + 새 경로에 rename 기록
+        deleteFileMeta(userId, oldPath).catch(err => console.error('Firebase delete old meta failed:', err));
+        updateFileMeta(userId, newPath, {
+          size: 0,
+          hash: '',
+          action: 'rename',
+          oldPath
+        }).catch(err => console.error('Firebase rename meta failed:', err));
+      }
       await loadFiles();
       updateToast(tid, `✏️ 이름 변경 완료!`, 'success');
       if (currentFile?.path === oldPath) openFile(newPath);
@@ -474,6 +517,9 @@ export default function Workspace({ user, isPrivateVault = false }) {
     try {
       const folderQuery = isFolder ? '?folder=true' : '';
       await fetch(buildApiUrl(`/file/${encodePath(fp)}${folderQuery}`), { method: 'DELETE', headers: await authHeaders(isPrivateVault) });
+      if (!isPrivateVault) {
+        deleteFileMeta(userId, fp).catch(err => console.error('Firebase delete meta failed:', err));
+      }
       await loadFiles();
       updateToast(tid, `🗑️ "${name}" ${label} 삭제 완료`, 'success');
       if (currentFile?.path === fp || (isFolder && currentFile?.path?.startsWith(fp + '/'))) {
@@ -502,6 +548,13 @@ export default function Workspace({ user, isPrivateVault = false }) {
         headers: await authHeaders(isPrivateVault),
         body: JSON.stringify({ content: data.content })
       });
+      if (!isPrivateVault) {
+        updateFileMeta(userId, newPath, {
+          size: new Blob([data.content]).size,
+          hash: simpleHash(data.content),
+          action: 'create'
+        }).catch(err => console.error('Firebase meta update failed:', err));
+      }
       await loadFiles();
       updateToast(tid, `📋 "${fileName}" 복제 완료!`, 'success');
     } catch (err) {
@@ -605,6 +658,7 @@ export default function Workspace({ user, isPrivateVault = false }) {
           <h1 onClick={() => navigate(`/${userId}`)} style={{ cursor: 'pointer' }}>🔥 {getAppName()}</h1>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <AgentStatus userId={userId} isPrivateVault={isPrivateVault} />
           <span className="user-badge">👤 {user?.displayName || userId}</span>
           <button className="logout-btn" onClick={handleGenerateToken}>🔑 API 토큰</button>
           <button className="logout-btn" onClick={handleLogout}>로그아웃</button>
@@ -780,6 +834,13 @@ export default function Workspace({ user, isPrivateVault = false }) {
                       headers: await authHeaders(isPrivateVault),
                       body: JSON.stringify({ content: text })
                     });
+                    if (!isPrivateVault) {
+                      updateFileMeta(userId, fp, {
+                        size: new Blob([text]).size,
+                        hash: simpleHash(text),
+                        action: 'create'
+                      }).catch(err => console.error('Firebase meta update failed:', err));
+                    }
                   }
                   await loadFiles();
                   updateToast(tid, `📤 ${droppedFiles.length}개 파일 업로드 완료!`, 'success');

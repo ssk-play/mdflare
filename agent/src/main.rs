@@ -186,23 +186,48 @@ impl ApiClient {
 
     fn list_files(&self) -> Result<Vec<FileItem>, reqwest::Error> {
         let url = format!("{}/api/{}/files", self.base_url, self.username);
-        let resp: FilesResponse = self.client.get(&url).send()?.json()?;
+        let resp: FilesResponse = self.client
+            .get(&url)
+            .header("Authorization", format!("Bearer {}", self.token))
+            .send()?
+            .json()?;
         Ok(resp.files)
     }
 
     fn get_file(&self, path: &str) -> Result<FileContent, reqwest::Error> {
         let encoded = urlencoding::encode(path);
         let url = format!("{}/api/{}/file/{}", self.base_url, self.username, encoded);
-        self.client.get(&url).send()?.json()
+        self.client
+            .get(&url)
+            .header("Authorization", format!("Bearer {}", self.token))
+            .send()?
+            .json()
     }
 
     fn put_file(&self, path: &str, content: &str) -> Result<(), Box<dyn std::error::Error>> {
+        self.put_file_with_diff(path, content, None, None)
+    }
+
+    fn put_file_with_diff(
+        &self,
+        path: &str,
+        content: &str,
+        old_hash: Option<&str>,
+        diff: Option<&serde_json::Value>,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         let encoded = urlencoding::encode(path);
         let url = format!("{}/api/{}/file/{}", self.base_url, self.username, encoded);
+        let mut body = serde_json::json!({ "content": content });
+        if let Some(oh) = old_hash {
+            body["oldHash"] = serde_json::json!(oh);
+        }
+        if let Some(d) = diff {
+            body["diff"] = d.clone();
+        }
         self.client
             .put(&url)
             .header("Authorization", format!("Bearer {}", self.token))
-            .json(&serde_json::json!({ "content": content }))
+            .json(&body)
             .send()?;
         Ok(())
     }
@@ -216,6 +241,33 @@ impl ApiClient {
             .send()?;
         Ok(())
     }
+
+    fn put_heartbeat(&self) {
+        let url = format!("{}/api/{}/agent-status", self.base_url, self.username);
+        self.client
+            .put(&url)
+            .header("Authorization", format!("Bearer {}", self.token))
+            .send()
+            .ok();
+    }
+
+    fn get_sync_config(&self) -> Result<RtdbConfig, Box<dyn std::error::Error>> {
+        let url = format!("{}/api/{}/sync-config", self.base_url, self.username);
+        let resp: RtdbConfig = self.client
+            .get(&url)
+            .header("Authorization", format!("Bearer {}", self.token))
+            .send()?
+            .json()?;
+        Ok(resp)
+    }
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RtdbConfig {
+    rtdb_url: String,
+    rtdb_auth: String,
+    user_id: String,
 }
 
 // ============================================================================
@@ -589,10 +641,147 @@ fn generate_connection_token_with_url(url: &str, token: &str) -> String {
 // Sync Engine (Cloud 모드용)
 // ============================================================================
 
+// ============================================================================
+// RTDB types and diff helpers
+// ============================================================================
+
+#[derive(Debug, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct RtdbFileEntry {
+    path: String,
+    action: String,
+    #[allow(dead_code)]
+    hash: Option<String>,
+    old_hash: Option<String>,
+    diff: Option<Vec<serde_json::Value>>,
+    old_path: Option<String>,
+    #[allow(dead_code)]
+    modified: Option<u64>,
+    #[allow(dead_code)]
+    size: Option<u64>,
+}
+
+/// Apply a line-based diff to content.
+/// diff ops: {"eq": N}, {"del": N}, {"ins": ["line1", ...]}
+fn apply_line_diff(old_content: &str, diff: &[serde_json::Value]) -> Option<String> {
+    let old_lines: Vec<&str> = old_content.split('\n').collect();
+    let mut result = Vec::new();
+    let mut pos = 0;
+
+    for op in diff {
+        if let Some(eq) = op.get("eq").and_then(|v| v.as_u64()) {
+            let eq = eq as usize;
+            if pos + eq > old_lines.len() {
+                return None; // diff doesn't match
+            }
+            result.extend_from_slice(&old_lines[pos..pos + eq]);
+            pos += eq;
+        } else if let Some(del) = op.get("del").and_then(|v| v.as_u64()) {
+            let del = del as usize;
+            if pos + del > old_lines.len() {
+                return None;
+            }
+            pos += del;
+        } else if let Some(ins) = op.get("ins").and_then(|v| v.as_array()) {
+            for line in ins {
+                if let Some(s) = line.as_str() {
+                    result.push(s);
+                } else {
+                    return None;
+                }
+            }
+        } else {
+            return None; // unknown op
+        }
+    }
+    // remaining lines (if any eq ops missed)
+    result.extend_from_slice(&old_lines[pos..]);
+    Some(result.join("\n"))
+}
+
+/// Generate a line-based diff using the `similar` crate.
+fn generate_line_diff(old_content: &str, new_content: &str) -> serde_json::Value {
+    use similar::{ChangeTag, TextDiff};
+
+    let text_diff = TextDiff::from_lines(old_content, new_content);
+    let mut ops: Vec<serde_json::Value> = Vec::new();
+    let mut eq_count = 0usize;
+    let mut del_count = 0usize;
+    let mut ins_lines: Vec<String> = Vec::new();
+
+    let flush_del = |ops: &mut Vec<serde_json::Value>, del: &mut usize| {
+        if *del > 0 {
+            ops.push(serde_json::json!({"del": *del}));
+            *del = 0;
+        }
+    };
+    let flush_ins = |ops: &mut Vec<serde_json::Value>, ins: &mut Vec<String>| {
+        if !ins.is_empty() {
+            ops.push(serde_json::json!({"ins": ins.clone()}));
+            ins.clear();
+        }
+    };
+    let flush_eq = |ops: &mut Vec<serde_json::Value>, eq: &mut usize| {
+        if *eq > 0 {
+            ops.push(serde_json::json!({"eq": *eq}));
+            *eq = 0;
+        }
+    };
+
+    for change in text_diff.iter_all_changes() {
+        match change.tag() {
+            ChangeTag::Equal => {
+                flush_del(&mut ops, &mut del_count);
+                flush_ins(&mut ops, &mut ins_lines);
+                eq_count += 1;
+            }
+            ChangeTag::Delete => {
+                flush_eq(&mut ops, &mut eq_count);
+                flush_ins(&mut ops, &mut ins_lines);
+                del_count += 1;
+            }
+            ChangeTag::Insert => {
+                flush_eq(&mut ops, &mut eq_count);
+                // strip trailing newline that similar adds
+                let val = change.value();
+                let line = if val.ends_with('\n') { &val[..val.len()-1] } else { val };
+                ins_lines.push(line.to_string());
+            }
+        }
+    }
+    flush_eq(&mut ops, &mut eq_count);
+    flush_del(&mut ops, &mut del_count);
+    flush_ins(&mut ops, &mut ins_lines);
+
+    serde_json::json!(ops)
+}
+
+/// Convert i32 to base-36 string, matching JS `Number.prototype.toString(36)`.
+/// Negative numbers are prefixed with '-'.
+fn to_base36(n: i32) -> String {
+    if n == 0 {
+        return "0".to_string();
+    }
+    let negative = n < 0;
+    let mut val = if negative { (n as i64).abs() as u64 } else { n as u64 };
+    let digits = b"0123456789abcdefghijklmnopqrstuvwxyz";
+    let mut buf = Vec::new();
+    while val > 0 {
+        buf.push(digits[(val % 36) as usize]);
+        val /= 36;
+    }
+    if negative {
+        buf.push(b'-');
+    }
+    buf.reverse();
+    String::from_utf8(buf).unwrap()
+}
+
 struct SyncEngine {
     api: ApiClient,
     local_path: PathBuf,
     local_hashes: HashMap<String, String>,
+    local_content_cache: HashMap<String, String>,
     remote_modified: HashMap<String, String>,
 }
 
@@ -602,6 +791,7 @@ impl SyncEngine {
             api: ApiClient::new(&config.api_base, &config.username, &config.api_token),
             local_path: PathBuf::from(&config.local_path),
             local_hashes: HashMap::new(),
+            local_content_cache: HashMap::new(),
             remote_modified: HashMap::new(),
         }
     }
@@ -611,7 +801,8 @@ impl SyncEngine {
         for c in s.chars() {
             hash = ((hash << 5).wrapping_sub(hash)).wrapping_add(c as i32);
         }
-        format!("{:x}", hash)
+        // JS의 hash.toString(36)과 동일한 base-36 출력
+        to_base36(hash)
     }
 
     fn flatten_files(items: &[FileItem]) -> Vec<(String, Option<String>)> {
@@ -664,6 +855,7 @@ impl SyncEngine {
                             continue;
                         }
                         self.local_hashes.insert(path.clone(), Self::simple_hash(&content.content));
+                        self.local_content_cache.insert(path.clone(), content.content);
                         if let Some(mod_time) = modified {
                             self.remote_modified.insert(path.clone(), mod_time.clone());
                         }
@@ -686,6 +878,7 @@ impl SyncEngine {
                             continue;
                         }
                         self.local_hashes.insert(path.clone(), Self::simple_hash(&content));
+                        self.local_content_cache.insert(path.clone(), content);
                         println!("⬆️ {}", path);
                         uploaded += 1;
                     }
@@ -694,19 +887,39 @@ impl SyncEngine {
             }
         }
 
+        self.api.put_heartbeat();
         Ok((downloaded, uploaded))
     }
 
     fn handle_local_change(&mut self, full_path: &Path) {
         if let Ok(rel) = full_path.strip_prefix(&self.local_path) {
             let rel_str = rel.to_string_lossy().replace('\\', "/");
-            
+
             if full_path.exists() {
                 if let Ok(content) = fs::read_to_string(full_path) {
-                    let hash = Self::simple_hash(&content);
-                    if self.local_hashes.get(&rel_str) != Some(&hash) {
-                        self.local_hashes.insert(rel_str.clone(), hash);
-                        if self.api.put_file(&rel_str, &content).is_ok() {
+                    let new_hash = Self::simple_hash(&content);
+                    if self.local_hashes.get(&rel_str) != Some(&new_hash) {
+                        let old_hash = self.local_hashes.get(&rel_str).cloned();
+                        // 이전 내용 읽어서 diff 생성 (해시가 있으면 이전 버전 존재)
+                        let diff = if old_hash.is_some() {
+                            let diff_val = generate_line_diff(
+                                &self.local_content_cache.get(&rel_str).map(|s| s.as_str()).unwrap_or(""),
+                                &content,
+                            );
+                            let diff_str = diff_val.to_string();
+                            if diff_str.len() <= 10240 { Some(diff_val) } else { None }
+                        } else {
+                            None
+                        };
+                        self.local_hashes.insert(rel_str.clone(), new_hash);
+                        self.local_content_cache.insert(rel_str.clone(), content.clone());
+                        let result = self.api.put_file_with_diff(
+                            &rel_str,
+                            &content,
+                            old_hash.as_deref(),
+                            diff.as_ref(),
+                        );
+                        if result.is_ok() {
                             println!("⬆️ {}", rel_str);
                         }
                     }
@@ -714,9 +927,98 @@ impl SyncEngine {
             } else {
                 if self.api.delete_file(&rel_str).is_ok() {
                     self.local_hashes.remove(&rel_str);
+                    self.local_content_cache.remove(&rel_str);
                     println!("🗑️ {}", rel_str);
                 }
             }
+        }
+    }
+
+    /// Handle an RTDB event (from SSE subscription)
+    fn handle_rtdb_event(&mut self, entry: &RtdbFileEntry) {
+        match entry.action.as_str() {
+            "save" => {
+                let local_file = self.local_path.join(&entry.path);
+                let local_hash = self.local_hashes.get(&entry.path).cloned();
+
+                // diff 적용 가능: 로컬 해시 == oldHash
+                if let (Some(old_hash), Some(diff), Some(ref lh)) = (&entry.old_hash, &entry.diff, &local_hash) {
+                    if lh == old_hash {
+                        if let Ok(old_content) = fs::read_to_string(&local_file) {
+                            if let Some(new_content) = apply_line_diff(&old_content, diff) {
+                                if let Some(parent) = local_file.parent() {
+                                    fs::create_dir_all(parent).ok();
+                                }
+                                if fs::write(&local_file, &new_content).is_ok() {
+                                    let hash = Self::simple_hash(&new_content);
+                                    self.local_hashes.insert(entry.path.clone(), hash);
+                                    self.local_content_cache.insert(entry.path.clone(), new_content);
+                                    println!("⬇️ {} (diff applied)", entry.path);
+                                    return;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // fallback: R2에서 전체 파일 fetch
+                self.fetch_from_r2(&entry.path);
+            }
+            "create" => {
+                self.fetch_from_r2(&entry.path);
+            }
+            "delete" => {
+                let local_file = self.local_path.join(&entry.path);
+                if local_file.exists() {
+                    if fs::remove_file(&local_file).is_ok() {
+                        self.local_hashes.remove(&entry.path);
+                        self.local_content_cache.remove(&entry.path);
+                        println!("🗑️ {} (rtdb)", entry.path);
+                    }
+                }
+            }
+            "rename" => {
+                if let Some(old_path) = &entry.old_path {
+                    let old_file = self.local_path.join(old_path);
+                    let new_file = self.local_path.join(&entry.path);
+                    if old_file.exists() {
+                        if let Some(parent) = new_file.parent() {
+                            fs::create_dir_all(parent).ok();
+                        }
+                        if fs::rename(&old_file, &new_file).is_ok() {
+                            // 해시 이전
+                            if let Some(h) = self.local_hashes.remove(old_path) {
+                                self.local_hashes.insert(entry.path.clone(), h);
+                            }
+                            if let Some(c) = self.local_content_cache.remove(old_path) {
+                                self.local_content_cache.insert(entry.path.clone(), c);
+                            }
+                            println!("📝 {} → {} (rtdb)", old_path, entry.path);
+                        }
+                    } else {
+                        // 이전 파일 없으면 R2에서 fetch
+                        self.fetch_from_r2(&entry.path);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn fetch_from_r2(&mut self, path: &str) {
+        match self.api.get_file(path) {
+            Ok(content) => {
+                let local_file = self.local_path.join(path);
+                if let Some(parent) = local_file.parent() {
+                    fs::create_dir_all(parent).ok();
+                }
+                if fs::write(&local_file, &content.content).is_ok() {
+                    self.local_hashes.insert(path.to_string(), Self::simple_hash(&content.content));
+                    self.local_content_cache.insert(path.to_string(), content.content);
+                    println!("⬇️ {} (r2)", path);
+                }
+            }
+            Err(e) => log::error!("R2 fetch 실패 {}: {}", path, e),
         }
     }
 }
@@ -951,7 +1253,32 @@ fn run_cloud_tray_app(config: Config) {
         }
     });
     
-    // 주기적 동기화
+    // RTDB SSE 구독 (실시간 변경 감지)
+    let engine_rtdb = engine.clone();
+    let config_for_rtdb = config.clone();
+    thread::spawn(move || {
+        let api = ApiClient::new(
+            &config_for_rtdb.api_base,
+            &config_for_rtdb.username,
+            &config_for_rtdb.api_token,
+        );
+        match api.get_sync_config() {
+            Ok(rtdb_config) => {
+                println!("🔌 RTDB 접속 정보 수신: {}", rtdb_config.user_id);
+                start_rtdb_subscription(
+                    rtdb_config.rtdb_url,
+                    rtdb_config.rtdb_auth,
+                    rtdb_config.user_id,
+                    engine_rtdb,
+                );
+            }
+            Err(e) => {
+                eprintln!("⚠️ RTDB 접속 정보 조회 실패: {} (폴링만 사용)", e);
+            }
+        }
+    });
+
+    // 주기적 동기화 (fallback)
     let engine_timer = engine.clone();
     thread::spawn(move || {
         loop {
@@ -961,7 +1288,7 @@ fn run_cloud_tray_app(config: Config) {
             }
         }
     });
-    
+
     // 초기 동기화
     if let Ok(mut eng) = engine.lock() {
         match eng.full_sync() {
@@ -969,7 +1296,7 @@ fn run_cloud_tray_app(config: Config) {
             Err(e) => eprintln!("❌ 동기화 실패: {}", e),
         }
     }
-    
+
     let config_for_menu = config.clone();
     let menu_receiver = MenuEvent::receiver();
     
@@ -1128,6 +1455,141 @@ fn build_cloud_menu(config: &Config) -> (Menu, muda::MenuId, muda::MenuId, muda:
     (menu, sync_id, folder_id, web_id, quit_id)
 }
 
+/// Start RTDB SSE subscription in a background thread.
+/// Parses Firebase REST SSE events and dispatches to SyncEngine.
+fn start_rtdb_subscription(
+    rtdb_url: String,
+    rtdb_auth: String,
+    username: String,
+    engine: Arc<Mutex<SyncEngine>>,
+) {
+    thread::spawn(move || {
+        let client = reqwest::blocking::Client::builder()
+            .timeout(None)
+            .build()
+            .unwrap();
+
+        loop {
+            let url = format!(
+                "{}/mdflare/{}/files.json?auth={}",
+                rtdb_url, username, rtdb_auth
+            );
+            println!("🔌 RTDB SSE 연결 중...");
+
+            let resp = client
+                .get(&url)
+                .header("Accept", "text/event-stream")
+                .send();
+
+            match resp {
+                Ok(response) => {
+                    use std::io::{BufRead, BufReader};
+                    let reader = BufReader::new(response);
+                    let mut event_type = String::new();
+                    let mut data_buf = String::new();
+                    let mut first_put = true; // 첫 "put"은 전체 스냅샷 (무시)
+
+                    println!("✅ RTDB SSE 연결됨");
+
+                    for line in reader.lines() {
+                        match line {
+                            Ok(line) => {
+                                if line.starts_with("event:") {
+                                    event_type = line[6..].trim().to_string();
+                                } else if line.starts_with("data:") {
+                                    data_buf = line[5..].trim().to_string();
+                                } else if line.is_empty() && !event_type.is_empty() {
+                                    // 이벤트 완료 → 처리
+                                    if event_type == "put" || event_type == "patch" {
+                                        if first_put && event_type == "put" {
+                                            first_put = false;
+                                            // 첫 put은 전체 스냅샷, 스킵
+                                            event_type.clear();
+                                            data_buf.clear();
+                                            continue;
+                                        }
+                                        handle_sse_data(&data_buf, &engine);
+                                    } else if event_type == "keep-alive" {
+                                        // ignore
+                                    }
+                                    event_type.clear();
+                                    data_buf.clear();
+                                }
+                            }
+                            Err(e) => {
+                                eprintln!("⚠️ RTDB SSE 읽기 오류: {}", e);
+                                break;
+                            }
+                        }
+                    }
+
+                    eprintln!("⚠️ RTDB SSE 연결 끊어짐, 5초 후 재연결...");
+                }
+                Err(e) => {
+                    eprintln!("⚠️ RTDB SSE 연결 실패: {}, 5초 후 재시도...", e);
+                }
+            }
+
+            thread::sleep(Duration::from_secs(5));
+        }
+    });
+}
+
+/// Parse SSE data payload and dispatch to SyncEngine
+fn handle_sse_data(data: &str, engine: &Arc<Mutex<SyncEngine>>) {
+    // Firebase SSE data format: {"path":"/safeKey","data":{...}} or {"path":"/","data":{...}}
+    let parsed: Result<serde_json::Value, _> = serde_json::from_str(data);
+    let val = match parsed {
+        Ok(v) => v,
+        Err(_) => return,
+    };
+
+    let path = val.get("path").and_then(|p| p.as_str()).unwrap_or("");
+    let data_val = match val.get("data") {
+        Some(d) => d,
+        None => return,
+    };
+
+    if path == "/" {
+        // 루트 업데이트: 여러 파일 변경 가능 (각 키가 safeKey)
+        if let Some(obj) = data_val.as_object() {
+            for (_key, entry_val) in obj {
+                if let Ok(entry) = serde_json::from_value::<RtdbFileEntry>(entry_val.clone()) {
+                    if let Ok(mut eng) = engine.lock() {
+                        eng.handle_rtdb_event(&entry);
+                    }
+                }
+            }
+        }
+    } else {
+        // 개별 파일 변경: path = "/safeKey"
+        if data_val.is_null() {
+            // 삭제 이벤트: safeKey → path 복원
+            let safe_key = path.trim_start_matches('/');
+            let file_path = safe_key
+                .replace("_slash_", "/")
+                .replace("_dot_", ".");
+            let entry = RtdbFileEntry {
+                path: file_path,
+                action: "delete".to_string(),
+                hash: None,
+                old_hash: None,
+                diff: None,
+                old_path: None,
+                modified: None,
+                size: None,
+            };
+            if let Ok(mut eng) = engine.lock() {
+                eng.handle_rtdb_event(&entry);
+            }
+        } else if let Ok(entry) = serde_json::from_value::<RtdbFileEntry>(data_val.clone()) {
+            if let Ok(mut eng) = engine.lock() {
+                eng.handle_rtdb_event(&entry);
+            }
+        }
+    }
+}
+
 fn start_cloud_sync(config: &Config) -> Arc<Mutex<SyncEngine>> {
     let engine = Arc::new(Mutex::new(SyncEngine::new(config)));
     let local_path = config.local_path.clone();
@@ -1152,7 +1614,33 @@ fn start_cloud_sync(config: &Config) -> Arc<Mutex<SyncEngine>> {
         }
     });
 
-    // 주기적 동기화
+    // RTDB SSE 구독 (실시간 변경 감지)
+    let engine_rtdb = engine.clone();
+    let config_for_rtdb = config.clone();
+    thread::spawn(move || {
+        // sync-config에서 RTDB 접속 정보 가져오기
+        let api = ApiClient::new(
+            &config_for_rtdb.api_base,
+            &config_for_rtdb.username,
+            &config_for_rtdb.api_token,
+        );
+        match api.get_sync_config() {
+            Ok(rtdb_config) => {
+                println!("🔌 RTDB 접속 정보 수신: {}", rtdb_config.user_id);
+                start_rtdb_subscription(
+                    rtdb_config.rtdb_url,
+                    rtdb_config.rtdb_auth,
+                    rtdb_config.user_id,
+                    engine_rtdb,
+                );
+            }
+            Err(e) => {
+                eprintln!("⚠️ RTDB 접속 정보 조회 실패: {} (폴링만 사용)", e);
+            }
+        }
+    });
+
+    // 주기적 동기화 (fallback: RTDB 연결 끊김 대비)
     let engine_timer = engine.clone();
     thread::spawn(move || {
         loop {

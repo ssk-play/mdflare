@@ -4,6 +4,7 @@
 export async function onRequest(context) {
   const { request, params, env, data } = context;
   const userId = data.resolvedUid || params.userId;
+  const username = params.userId;
   const filePath = decodeURIComponent(params.path.join('/'));
   const r2Key = `vaults/${userId}/${filePath}`;
 
@@ -11,11 +12,54 @@ export async function onRequest(context) {
     case 'GET':
       return handleGet(env, r2Key, filePath, userId, data);
     case 'PUT':
-      return handlePut(env, r2Key, filePath, request);
+      return handlePut(env, r2Key, filePath, request, username, data);
     case 'DELETE':
-      return handleDelete(env, r2Key, filePath, request);
+      return handleDelete(env, r2Key, filePath, request, username, data);
     default:
       return Response.json({ error: 'Method not allowed' }, { status: 405 });
+  }
+}
+
+// Firebase RTDB helper
+function toSafeKey(filePath) {
+  return filePath.replace(/\./g, '_dot_').replace(/\//g, '_slash_');
+}
+
+function simpleHash(str) {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    const char = str.charCodeAt(i);
+    hash = ((hash << 5) - hash) + char;
+    hash |= 0;
+  }
+  return hash.toString(36);
+}
+
+async function writeRtdb(env, username, filePath, data) {
+  const secret = env.FIREBASE_DB_SECRET;
+  if (!secret) return;
+  const safeKey = toSafeKey(filePath);
+  const url = `https://markdownflare-default-rtdb.firebaseio.com/mdflare/${username}/files/${safeKey}.json?auth=${secret}`;
+  try {
+    await fetch(url, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+  } catch (e) {
+    console.error('RTDB write failed:', e);
+  }
+}
+
+async function deleteRtdb(env, username, filePath) {
+  const secret = env.FIREBASE_DB_SECRET;
+  if (!secret) return;
+  const safeKey = toSafeKey(filePath);
+  const url = `https://markdownflare-default-rtdb.firebaseio.com/mdflare/${username}/files/${safeKey}.json?auth=${secret}`;
+  try {
+    await fetch(url, { method: 'DELETE' });
+  } catch (e) {
+    console.error('RTDB delete failed:', e);
   }
 }
 
@@ -73,23 +117,44 @@ async function handleGet(env, r2Key, filePath, userId, data) {
   });
 }
 
-async function handlePut(env, r2Key, filePath, request) {
+async function handlePut(env, r2Key, filePath, request, username, data) {
   const body = await request.json();
   const content = body.content;
+  const size = new Blob([content]).size;
+  const modified = new Date().toISOString();
 
   await env.VAULT.put(r2Key, content, {
-    customMetadata: { modified: new Date().toISOString() }
+    customMetadata: { modified }
   });
+
+  // 에이전트 업로드 시 RTDB 기록 (isOwner = API 토큰 인증된 소유자)
+  if (data.isOwner && username) {
+    const hash = simpleHash(content);
+    const rtdbData = {
+      path: filePath,
+      action: body.oldHash ? 'save' : 'create',
+      hash,
+      modified: Date.now(),
+      size,
+    };
+    if (body.oldHash) {
+      rtdbData.oldHash = body.oldHash;
+      if (body.diff && JSON.stringify(body.diff).length <= 10240) {
+        rtdbData.diff = body.diff;
+      }
+    }
+    await writeRtdb(env, username, filePath, rtdbData);
+  }
 
   return Response.json({
     path: filePath,
-    size: new Blob([content]).size,
-    modified: new Date().toISOString(),
+    size,
+    modified,
     saved: true
   });
 }
 
-async function handleDelete(env, r2Key, filePath, request) {
+async function handleDelete(env, r2Key, filePath, request, username, data) {
   // 폴더 삭제: ?folder=true 쿼리 파라미터
   const url = new URL(request.url);
   const isFolder = url.searchParams.get('folder') === 'true';
@@ -106,9 +171,24 @@ async function handleDelete(env, r2Key, filePath, request) {
 
     // R2 delete는 배열 지원 (최대 1000개씩)
     await env.VAULT.delete(keys);
+
+    // 폴더 내 각 파일의 RTDB 엔트리 삭제
+    if (data.isOwner && username) {
+      const vaultPrefix = `vaults/${data.resolvedUid}/`;
+      for (const key of keys) {
+        const fp = key.startsWith(vaultPrefix) ? key.slice(vaultPrefix.length) : key;
+        await deleteRtdb(env, username, fp);
+      }
+    }
+
     return Response.json({ deleted: true, path: filePath, count: keys.length });
   }
 
   await env.VAULT.delete(r2Key);
+
+  if (data.isOwner && username) {
+    await deleteRtdb(env, username, filePath);
+  }
+
   return Response.json({ deleted: true, path: filePath });
 }
