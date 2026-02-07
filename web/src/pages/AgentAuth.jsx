@@ -71,25 +71,10 @@ export default function AgentAuth() {
       const callbackUrl = `mdflare://callback?uid=${encodeURIComponent(user.uid)}&username=${encodeURIComponent(data.username)}&token=${encodeURIComponent(tokenData.token)}`;
       
       setStatus('redirecting');
-
-      // 앱이 열리면 브라우저가 포커스를 잃음
-      let appOpened = false;
-      const onBlur = () => {
-        appOpened = true;
-        setStatus('done');
-        window.removeEventListener('blur', onBlur);
-      };
-      window.addEventListener('blur', onBlur);
-
       window.location.href = callbackUrl;
 
-      // 3초 후 앱이 안 열렸으면 설치 안내
-      setTimeout(() => {
-        window.removeEventListener('blur', onBlur);
-        if (!appOpened) {
-          setStatus('app_not_found');
-        }
-      }, 3000);
+      // URL scheme 리다이렉트 후 완료 표시
+      setTimeout(() => setStatus('done'), 1500);
 
     } catch (err) {
       setError(err.message);
@@ -146,14 +131,10 @@ export default function AgentAuth() {
             <a href={`/${username}`} className="auth-btn primary" style={{display:'inline-block',textDecoration:'none',marginTop:'12px'}}>
               📝 내 페이지로 이동
             </a>
+            <p className="hint">
+              앱이 열리지 않았나요? <a href="/download">에이전트 다운로드</a>
+            </p>
           </>
-        )}
-
-        {status === 'app_not_found' && (
-          <div className="error-box">
-            <p>⚠️ MDFlare 에이전트 앱을 찾을 수 없습니다.</p>
-            <a href="/download" className="download-link">에이전트 다운로드 →</a>
-          </div>
         )}
 
         {status === 'error' && (

@@ -1204,8 +1204,9 @@ fn run_cloud_tray_app(config: Config) {
     let sync_item = MenuItem::new("🔄 지금 동기화", true, None);
     let folder_item = MenuItem::new("📂 폴더 열기", true, None);
     let web_item = MenuItem::new("🌐 웹에서 열기", true, None);
+    let logoff_item = MenuItem::new("🚪 로그아웃", true, None);
     let quit_item = MenuItem::new("종료", true, None);
-    
+
     menu.append(&mode_item).ok();
     menu.append(&user_item).ok();
     menu.append(&path_item).ok();
@@ -1214,11 +1215,13 @@ fn run_cloud_tray_app(config: Config) {
     menu.append(&folder_item).ok();
     menu.append(&web_item).ok();
     menu.append(&PredefinedMenuItem::separator()).ok();
+    menu.append(&logoff_item).ok();
     menu.append(&quit_item).ok();
-    
+
     let sync_id = sync_item.id().clone();
     let folder_id = folder_item.id().clone();
     let web_id = web_item.id().clone();
+    let logoff_id = logoff_item.id().clone();
     let quit_id = quit_item.id().clone();
     
     let _tray = TrayIconBuilder::new()
@@ -1312,13 +1315,20 @@ fn run_cloud_tray_app(config: Config) {
                 } else if event.id == web_id {
                     let url = format!("{}/{}", config_for_menu.api_base, config_for_menu.username);
                     open::that(url).ok();
+                } else if event.id == logoff_id {
+                    let path = Config::config_path();
+                    fs::remove_file(&path).ok();
+                    log_to_file("cloud: logoff → config deleted, restarting");
+                    let exe = std::env::current_exe().unwrap();
+                    std::process::Command::new(exe).spawn().ok();
+                    std::process::exit(0);
                 } else if event.id == quit_id {
                     std::process::exit(0);
                 }
             }
         }
     });
-    
+
     event_loop.run(move |event, _, control_flow| {
         *control_flow = ControlFlow::Wait;
         if let Event::Opened { urls } = event {
@@ -1427,7 +1437,7 @@ fn run_private_vault_tray_app(config: Config) {
 // Setup Tray App (미설정 상태)
 // ============================================================================
 
-fn build_cloud_menu(config: &Config) -> (Menu, muda::MenuId, muda::MenuId, muda::MenuId, muda::MenuId) {
+fn build_cloud_menu(config: &Config) -> (Menu, muda::MenuId, muda::MenuId, muda::MenuId, muda::MenuId, muda::MenuId) {
     let menu = Menu::new();
     let mode_item = MenuItem::new("☁️ Cloud 모드", false, None);
     let user_item = MenuItem::new(format!("👤 {}", config.username), false, None);
@@ -1435,11 +1445,13 @@ fn build_cloud_menu(config: &Config) -> (Menu, muda::MenuId, muda::MenuId, muda:
     let sync_item = MenuItem::new("🔄 지금 동기화", true, None);
     let folder_item = MenuItem::new("📂 폴더 열기", true, None);
     let web_item = MenuItem::new("🌐 웹에서 열기", true, None);
+    let logoff_item = MenuItem::new("🚪 로그아웃", true, None);
     let quit_item = MenuItem::new("종료", true, None);
 
     let sync_id = sync_item.id().clone();
     let folder_id = folder_item.id().clone();
     let web_id = web_item.id().clone();
+    let logoff_id = logoff_item.id().clone();
     let quit_id = quit_item.id().clone();
 
     menu.append(&mode_item).ok();
@@ -1450,9 +1462,10 @@ fn build_cloud_menu(config: &Config) -> (Menu, muda::MenuId, muda::MenuId, muda:
     menu.append(&folder_item).ok();
     menu.append(&web_item).ok();
     menu.append(&PredefinedMenuItem::separator()).ok();
+    menu.append(&logoff_item).ok();
     menu.append(&quit_item).ok();
 
-    (menu, sync_id, folder_id, web_id, quit_id)
+    (menu, sync_id, folder_id, web_id, logoff_id, quit_id)
 }
 
 /// Start RTDB SSE subscription in a background thread.
@@ -1684,6 +1697,8 @@ h1{font-size:18px;font-weight:600;text-align:center;margin-bottom:20px}
 .card-icon{font-size:24px}
 .card-title{font-size:15px;font-weight:600}
 .card-desc{font-size:12px;color:#86868b;line-height:1.6}
+.card.disabled{opacity:.45;cursor:default;pointer-events:none}
+.badge{font-size:10px;background:#86868b;color:#fff;padding:1px 6px;border-radius:8px;margin-left:auto}
 .cancel{display:block;width:100%;margin-top:16px;padding:8px;background:none;border:none;color:#86868b;font-size:13px;cursor:pointer;border-radius:8px;text-align:center}
 .cancel:hover{background:#e8e8ed}
 </style></head><body>
@@ -1693,8 +1708,8 @@ h1{font-size:18px;font-weight:600;text-align:center;margin-bottom:20px}
     <div class="card-header"><span class="card-icon">☁️</span><span class="card-title">Cloud</span></div>
     <div class="card-desc">온라인 저장소에 파일을 동기화합니다.<br>에이전트 PC가 꺼져 있어도 온라인에서 편집할 수 있습니다.</div>
   </div>
-  <div class="card" onclick="choose('vault')">
-    <div class="card-header"><span class="card-icon">🔐</span><span class="card-title">Private Vault</span></div>
+  <div class="card disabled">
+    <div class="card-header"><span class="card-icon">🔐</span><span class="card-title">Private Vault</span><span class="badge">준비중</span></div>
     <div class="card-desc">파일을 내 PC에만 보관합니다. (온라인 저장소 미사용)<br>에이전트가 꺼지면 온라인 에디터를 이용할 수 없습니다.</div>
   </div>
 </div>
@@ -1729,7 +1744,7 @@ fn run_setup_tray_app() {
     // 상태 공유
     let phase = Arc::new(Mutex::new(AppPhase::Setup));
     let cloud_state: Arc<Mutex<Option<(Config, Arc<Mutex<SyncEngine>>)>>> = Arc::new(Mutex::new(None));
-    let cloud_menu_ids: Arc<Mutex<Option<(muda::MenuId, muda::MenuId, muda::MenuId, muda::MenuId)>>> = Arc::new(Mutex::new(None));
+    let cloud_menu_ids: Arc<Mutex<Option<(muda::MenuId, muda::MenuId, muda::MenuId, muda::MenuId, muda::MenuId)>>> = Arc::new(Mutex::new(None));
     let vault_menu_ids: Arc<Mutex<Option<(muda::MenuId, muda::MenuId, muda::MenuId)>>> = Arc::new(Mutex::new(None));
     let needs_show_mode_dialog: Arc<Mutex<bool>> = Arc::new(Mutex::new(false));
     let dialog_choice: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
@@ -1765,7 +1780,7 @@ fn run_setup_tray_app() {
                         }
                     }
                     AppPhase::Cloud => {
-                        if let Some((sync_id, folder_id, web_id, quit_id)) = cloud_menu_ids_menu.lock().unwrap().as_ref() {
+                        if let Some((sync_id, folder_id, web_id, logoff_id, quit_id)) = cloud_menu_ids_menu.lock().unwrap().as_ref() {
                             if &event.id == quit_id {
                                 std::process::exit(0);
                             } else if &event.id == sync_id {
@@ -1783,6 +1798,13 @@ fn run_setup_tray_app() {
                                     let url = format!("{}/{}", config.api_base, config.username);
                                     open::that(url).ok();
                                 }
+                            } else if &event.id == logoff_id {
+                                let path = Config::config_path();
+                                fs::remove_file(&path).ok();
+                                log_to_file("cloud: logoff → config deleted, restarting");
+                                let exe = std::env::current_exe().unwrap();
+                                std::process::Command::new(exe).spawn().ok();
+                                std::process::exit(0);
                             }
                         }
                     }
@@ -1923,14 +1945,14 @@ fn run_setup_tray_app() {
 
         // 트레이 업데이트 폴링
         if let Some(config) = needs_cloud_update_loop.lock().unwrap().take() {
-            let (cloud_menu, sync_id, folder_id, web_id, quit_id) = build_cloud_menu(&config);
+            let (cloud_menu, sync_id, folder_id, web_id, logoff_id, quit_id) = build_cloud_menu(&config);
             tray.borrow_mut().set_menu(Some(Box::new(cloud_menu)));
             let _ = tray.borrow_mut().set_tooltip(Some(&format!("MDFlare Agent (☁️ {})", config.username)));
             tray.borrow_mut().set_icon(Some(load_icon_active())).ok();
 
             let engine = start_cloud_sync(&config);
             *cloud_state_loop.lock().unwrap() = Some((config, engine));
-            *cloud_menu_ids_loop.lock().unwrap() = Some((sync_id, folder_id, web_id, quit_id));
+            *cloud_menu_ids_loop.lock().unwrap() = Some((sync_id, folder_id, web_id, logoff_id, quit_id));
             *phase_loop.lock().unwrap() = AppPhase::Cloud;
         }
 
@@ -2015,14 +2037,14 @@ fn run_setup_tray_app() {
 
                         log_to_file(&format!("setup_tray: logged in as {} → switching to cloud tray", config.username));
 
-                        let (cloud_menu, sync_id, folder_id, web_id, quit_id) = build_cloud_menu(&config);
+                        let (cloud_menu, sync_id, folder_id, web_id, logoff_id, quit_id) = build_cloud_menu(&config);
                         tray.borrow_mut().set_menu(Some(Box::new(cloud_menu)));
                         let _ = tray.borrow_mut().set_tooltip(Some(&format!("MDFlare Agent (☁️ {})", config.username)));
                         tray.borrow_mut().set_icon(Some(load_icon_active())).ok();
 
                         let engine = start_cloud_sync(&config);
                         *cloud_state_loop.lock().unwrap() = Some((config, engine));
-                        *cloud_menu_ids_loop.lock().unwrap() = Some((sync_id, folder_id, web_id, quit_id));
+                        *cloud_menu_ids_loop.lock().unwrap() = Some((sync_id, folder_id, web_id, logoff_id, quit_id));
                         *phase_loop.lock().unwrap() = AppPhase::Cloud;
                     }
                 }
