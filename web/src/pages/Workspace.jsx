@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import CodeMirror from '@uiw/react-codemirror';
 import { markdown } from '@codemirror/lang-markdown';
@@ -87,6 +87,8 @@ const lightTheme = EditorView.theme({
   '.cm-activeLine': { backgroundColor: '#0969da08' },
 }, { dark: false });
 
+const cmStyle = { flex: 1, overflow: 'auto' };
+
 // 토스트 알림 컴포넌트
 function Toast({ toasts, onRemove }) {
   return (
@@ -143,6 +145,19 @@ export default function Workspace({ user, isPrivateVault = false }) {
   });
   const saveTimer = useRef(null);
   const toastId = useRef(0);
+  const contentRef = useRef('');
+  const savedContentRef = useRef('');
+  const lastSavedHashRef = useRef(null);
+
+  // refs를 state와 동기화 (RTDB 리스너에서 최신 값 참조용)
+  useEffect(() => { contentRef.current = content; }, [content]);
+  useEffect(() => { savedContentRef.current = savedContent; }, [savedContent]);
+
+  // CodeMirror extensions 메모이제이션 (리렌더 시 에디터 재설정 방지)
+  const cmExtensions = useMemo(
+    () => [markdown(), lightMode ? lightTheme : darkTheme, EditorView.lineWrapping],
+    [lightMode]
+  );
 
   // 토스트 헬퍼
   const addToast = useCallback((message, type = 'loading', duration = null) => {
@@ -223,28 +238,42 @@ export default function Workspace({ user, isPrivateVault = false }) {
     };
   }, []);
 
-  // Firebase 변경 감지
+  // Firebase 변경 감지 (refs 사용 → 리스너 재구독 최소화)
   useEffect(() => {
     const unsubscribe = onFilesChanged(userId, async (changedFiles) => {
       if (currentFile) {
         const changed = changedFiles.find(f => f.path === currentFile.path);
-        if (changed && changed.hash !== simpleHash(content)) {
-          try {
-            const headers = await authHeaders(isPrivateVault);
-            const r = await fetch(buildApiUrl(`/file/${encodePath(currentFile.path)}`), { headers });
-            const data = await r.json();
-            setContent(data.content);
-            setSavedContent(data.content);
-            setSaveStatus('idle');
-          } catch (err) {
-            console.error('Failed to reload:', err);
+        if (changed) {
+          // 자기 자신이 방금 저장한 변경이면 스킵
+          if (changed.hash === lastSavedHashRef.current) {
+            lastSavedHashRef.current = null;
+            loadFiles();
+            return;
+          }
+          // 사용자가 편집 중이면 (미저장 변경이 있으면) 스킵
+          if (contentRef.current !== savedContentRef.current) {
+            loadFiles();
+            return;
+          }
+          // 원격 변경만 반영
+          if (changed.hash !== simpleHash(contentRef.current)) {
+            try {
+              const headers = await authHeaders(isPrivateVault);
+              const r = await fetch(buildApiUrl(`/file/${encodePath(currentFile.path)}`), { headers });
+              const data = await r.json();
+              setContent(data.content);
+              setSavedContent(data.content);
+              setSaveStatus('idle');
+            } catch (err) {
+              console.error('Failed to reload:', err);
+            }
           }
         }
       }
       loadFiles();
     });
     return () => unsubscribe && unsubscribe();
-  }, [currentFile, content, loadFiles, userId]);
+  }, [currentFile, loadFiles, userId]);
 
   // 파일 열기 (URL 변경 + 최근 파일 기록)
   const openFile = useCallback((fp) => {
@@ -256,13 +285,14 @@ export default function Workspace({ user, isPrivateVault = false }) {
     });
   }, [userId, navigate]);
 
-  // 자동 저장
+  // 자동 저장 (savedContentRef 사용 → 불필요한 재생성 방지)
   const doSave = useCallback(async (fp, newContent) => {
     setSaveStatus('saving');
     try {
-      const oldHash = simpleHash(savedContent);
+      const prev = savedContentRef.current;
+      const oldHash = simpleHash(prev);
       const newHash = simpleHash(newContent);
-      const diff = computeLineDiff(savedContent, newContent);
+      const diff = computeLineDiff(prev, newContent);
       const res = await fetch(buildApiUrl(`/file/${encodePath(fp)}`), {
         method: 'PUT',
         headers: await authHeaders(isPrivateVault),
@@ -270,35 +300,28 @@ export default function Workspace({ user, isPrivateVault = false }) {
       });
       const data = await res.json();
       if (data.saved) {
+        lastSavedHashRef.current = newHash;
         setSavedContent(newContent);
         setSaveStatus('saved');
-        if (!isPrivateVault) {
-          updateFileMeta(userId, fp, {
-            size: new Blob([newContent]).size,
-            hash: newHash,
-            action: 'save',
-            oldHash,
-            diff
-          }).catch(err => console.error('Firebase meta update failed:', err));
-        }
+        // Worker가 RTDB에 기록하므로 여기서 updateFileMeta 호출 불필요
         setTimeout(() => setSaveStatus(s => s === 'saved' ? 'idle' : s), 2000);
       }
     } catch (err) {
       console.error('Failed to save:', err);
       setSaveStatus('error');
     }
-  }, [userId, savedContent, isPrivateVault]);
+  }, [userId, isPrivateVault]);
 
   const handleChange = useCallback((val) => {
     setContent(val);
     if (saveTimer.current) clearTimeout(saveTimer.current);
-    if (val !== savedContent && currentFile) {
+    if (val !== savedContentRef.current && currentFile) {
       setSaveStatus('editing');
       saveTimer.current = setTimeout(() => {
         doSave(currentFile.path, val);
       }, AUTO_SAVE_DELAY);
     }
-  }, [savedContent, currentFile, doSave]);
+  }, [currentFile, doSave]);
 
   useEffect(() => {
     return () => { if (saveTimer.current) clearTimeout(saveTimer.current); };
@@ -645,8 +668,8 @@ export default function Workspace({ user, isPrivateVault = false }) {
     return () => window.removeEventListener('keydown', handler);
   }, [currentFile, content, savedContent, doSave]);
 
-  const statusText = { idle: '', editing: '✏️', saving: '저장 중...', saved: '✓ 저장됨', error: '⚠️ 저장 실패' };
-  const statusClass = { idle: '', editing: 'unsaved', saving: 'saving', saved: 'saved', error: 'error' };
+  const statusClass = { idle: 'idle', editing: 'unsaved', saving: 'saving', saved: 'saved', error: 'error' };
+  const statusTitle = { idle: '', editing: '수정됨', saving: '저장 중...', saved: '저장됨', error: '저장 실패' };
 
   return (
     <>
@@ -793,7 +816,7 @@ export default function Workspace({ user, isPrivateVault = false }) {
                     URL.revokeObjectURL(url);
                     addToast('💾 다운로드 시작', 'success', 2000);
                   }} title="파일 다운로드">💾</button>
-                  <span className={`save-status ${statusClass[saveStatus]}`}>{statusText[saveStatus]}</span>
+                  <span className={`save-status ${statusClass[saveStatus]}`} title={statusTitle[saveStatus]} />
                 </div>
               </div>
               <div className="editor-stats">
@@ -804,8 +827,8 @@ export default function Workspace({ user, isPrivateVault = false }) {
               <div className="editor-content">
                 {(view === 'edit' || view === 'split') && (
                   <CodeMirror value={content} onChange={handleChange}
-                    extensions={[markdown(), lightMode ? lightTheme : darkTheme, EditorView.lineWrapping]}
-                    theme="none" style={{ flex: 1, overflow: 'auto' }} />
+                    extensions={cmExtensions}
+                    theme="none" style={cmStyle} />
                 )}
                 {(view === 'preview' || view === 'split') && (
                   <div className="preview">

@@ -592,25 +592,40 @@ body.light-mode .recent-item:hover { background: #eaeef2; color: #0969da; }
   color: #e6edf3;
 }
 
-.editor-toolbar .save-status {
-  font-size: 12px;
-  color: #3fb950;
+.save-status {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  transition: background 0.3s, box-shadow 0.3s;
+  background: transparent;
 }
 
-.editor-toolbar .save-status.unsaved {
-  color: #f0883e;
+.save-status.idle {
+  background: transparent;
+}
+
+.save-status.unsaved {
+  background: #f0883e;
 }
 
 .save-status.saving {
-  color: #8b949e;
+  background: #8b949e;
+  animation: pulse-save 1s infinite;
 }
 
 .save-status.saved {
-  color: #3fb950;
+  background: #3fb950;
 }
 
 .save-status.error {
-  color: #f85149;
+  background: #f85149;
+}
+
+@keyframes pulse-save {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
 }
 
 .editor-stats {
