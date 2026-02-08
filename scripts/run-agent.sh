@@ -44,5 +44,6 @@ cp "$ROOT_DIR/agent/macos/AppIcon.icns" "$APP_DIR/Contents/Resources/AppIcon.icn
 xattr -cr "$APP_DIR"
 /System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/LaunchServices.framework/Versions/A/Support/lsregister -f "$APP_DIR"
 
+echo "📦 /Applications에 설치 (URL scheme 중복 등록 방지)"
 echo "🚀 실행 중..."
 open "$APP_DIR"
