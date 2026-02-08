@@ -3,6 +3,7 @@
 set -e
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+source "$HOME/.cargo/env" 2>/dev/null || true
 VERSION_FILE="$ROOT_DIR/VERSION"
 
 CURRENT=$(cat "$VERSION_FILE" | tr -d '[:space:]')
@@ -17,6 +18,7 @@ sed -i '' "s/<string>$CURRENT<\/string>/<string>$NEW_VERSION<\/string>/g" "$ROOT
 
 echo "📦 $CURRENT → $NEW_VERSION"
 
+cd "$ROOT_DIR/agent" && cargo check --quiet 2>/dev/null
 cd "$ROOT_DIR"
-git add VERSION agent/Cargo.toml agent/macos/Info.plist package.json web/package.json
+git add VERSION agent/Cargo.toml agent/Cargo.lock agent/macos/Info.plist package.json web/package.json
 git commit -m "chore: bump version to $NEW_VERSION"
