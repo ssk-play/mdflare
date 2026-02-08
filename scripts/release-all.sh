@@ -5,7 +5,15 @@ set -e
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 SCRIPTS="$ROOT_DIR/scripts"
 
-echo "🚀 전체 릴리스 시작"
+PROFILE="release"
+for arg in "$@"; do
+  case "$arg" in
+    --release) PROFILE="release" ;;
+    --debug)   PROFILE="debug" ;;
+  esac
+done
+
+echo "🚀 전체 릴리스 시작 ($PROFILE)"
 echo ""
 
 # 1. 버전 bump
@@ -21,7 +29,7 @@ echo ""
 
 # 3. macOS 에이전트 배포
 echo "━━━ [3/3] macOS 에이전트 배포 ━━━"
-bash "$SCRIPTS/release-mac.sh"
+bash "$SCRIPTS/release-mac.sh" --$PROFILE
 echo ""
 
 echo "🎉 v$VERSION 전체 릴리스 완료!"

@@ -3,8 +3,22 @@
 set -e
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+source "$HOME/.cargo/env" 2>/dev/null || true
 VERSION=$(cat "$ROOT_DIR/VERSION" | tr -d '[:space:]')
 BUCKET="gs://markdownflare.firebasestorage.app/downloads/mac"
+
+PROFILE="release"
+for arg in "$@"; do
+  case "$arg" in
+    --release) PROFILE="release" ;;
+    --debug)   PROFILE="debug" ;;
+  esac
+done
+
+CARGO_FLAGS=""
+if [ "$PROFILE" = "release" ]; then
+  CARGO_FLAGS="--release"
+fi
 
 # gsutil 체크
 if ! command -v gsutil &> /dev/null; then
@@ -12,14 +26,13 @@ if ! command -v gsutil &> /dev/null; then
   exit 1
 fi
 
-echo "📦 v$VERSION 빌드 시작"
+echo "📦 v$VERSION 빌드 시작 ($PROFILE)"
 
 # 1. 빌드
 echo "🔨 빌드 중..."
-source "$HOME/.cargo/env" 2>/dev/null || true
-(cd "$ROOT_DIR/agent" && cargo build --release)
+(cd "$ROOT_DIR/agent" && cargo build $CARGO_FLAGS)
 
-BINARY="$ROOT_DIR/agent/target/release/mdflare-agent"
+BINARY="$ROOT_DIR/agent/target/$PROFILE/mdflare-agent"
 APP_DIR="/tmp/MDFlare Agent.app"
 ZIP="/tmp/MDFlare-Agent-${VERSION}-mac.zip"
 
