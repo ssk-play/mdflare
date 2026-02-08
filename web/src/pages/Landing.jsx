@@ -80,7 +80,7 @@ export default function Landing({ user, username }) {
       localStorage.setItem('mdflare_use_proxy', isExternal ? 'true' : 'false');
       
       // Private Vault 워크스페이스로 이동
-      navigate('/local');
+      navigate('/private');
     } catch (err) {
       console.error('[PV] 연결 실패:', err);
       setError(`연결 실패: ${err.message}`);
@@ -97,7 +97,7 @@ export default function Landing({ user, username }) {
     // Private Vault 모드로 저장된 경우 자동 연결
     const savedMode = localStorage.getItem('mdflare_mode');
     if (savedMode === 'private_vault') {
-      navigate('/local');
+      navigate('/private');
     }
   }, [user, username, navigate]);
 

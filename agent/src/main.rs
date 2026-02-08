@@ -1947,8 +1947,8 @@ h1{font-size:18px;font-weight:600;text-align:center;margin-bottom:20px}
     <div class="card-header"><span class="card-icon">☁️</span><span class="card-title">Cloud</span></div>
     <div class="card-desc">온라인 저장소에 파일을 동기화합니다.<br>에이전트 PC가 꺼져 있어도 온라인에서 편집할 수 있습니다.</div>
   </div>
-  <div class="card disabled">
-    <div class="card-header"><span class="card-icon">🔐</span><span class="card-title">Private Vault</span><span class="badge">준비중</span></div>
+  <div class="card" onclick="choose('vault')">
+    <div class="card-header"><span class="card-icon">🔐</span><span class="card-title">Private Vault</span></div>
     <div class="card-desc">파일을 내 PC에만 보관합니다. (온라인 저장소 미사용)<br>에이전트가 꺼지면 온라인 에디터를 이용할 수 없습니다.</div>
   </div>
 </div>
@@ -1991,7 +1991,7 @@ fn run_setup_tray_app() {
     let phase = Arc::new(Mutex::new(AppPhase::Setup));
     let cloud_state: Arc<Mutex<Option<(Config, Arc<Mutex<SyncEngine>>)>>> = Arc::new(Mutex::new(None));
     let cloud_menu_ids: Arc<Mutex<Option<(muda::MenuId, muda::MenuId, muda::MenuId, muda::MenuId, muda::MenuId)>>> = Arc::new(Mutex::new(None));
-    let vault_menu_ids: Arc<Mutex<Option<(muda::MenuId, muda::MenuId, muda::MenuId)>>> = Arc::new(Mutex::new(None));
+    let vault_menu_ids: Arc<Mutex<Option<(muda::MenuId, muda::MenuId, muda::MenuId, muda::MenuId)>>> = Arc::new(Mutex::new(None));
     let needs_show_mode_dialog: Arc<Mutex<bool>> = Arc::new(Mutex::new(false));
     let dialog_choice: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
     let needs_show_folder_dialog: Arc<Mutex<bool>> = Arc::new(Mutex::new(false));
@@ -2070,13 +2070,17 @@ fn run_setup_tray_app() {
                         }
                     }
                     AppPhase::Vault => {
-                        if let Some((folder_id, copy_token_id, quit_id)) = vault_menu_ids_menu.lock().unwrap().as_ref() {
+                        if let Some((folder_id, web_id, copy_token_id, quit_id)) = vault_menu_ids_menu.lock().unwrap().as_ref() {
                             if &event.id == quit_id {
                                 std::process::exit(0);
                             } else if &event.id == folder_id {
                                 if let Some((config, _)) = cloud_state_menu.lock().unwrap().as_ref() {
                                     open::that(&config.local_path).ok();
                                 }
+                            } else if &event.id == web_id {
+                                let settings = ServerSettings::load();
+                                let url = format!("{}/private", settings.api_base);
+                                open::that(url).ok();
                             } else if &event.id == copy_token_id {
                                 // 클립보드 복사
                                 let config = Config::load();
@@ -2373,10 +2377,12 @@ fn run_setup_tray_app() {
             let port_item = MenuItem::new(format!("🌐 http://localhost:{}", config.server_port), false, None);
             let path_item = MenuItem::new(format!("📁 {}", shorten_path(&config.local_path)), false, None);
             let folder_item = MenuItem::new("📂 폴더 열기", true, None);
+            let web_item = MenuItem::new("🌐 웹페이지 열기", true, None);
             let copy_token_item = MenuItem::new("📋 연결 토큰 복사", true, None);
             let quit_item = MenuItem::new("종료", true, None);
 
             let folder_id = folder_item.id().clone();
+            let web_id = web_item.id().clone();
             let copy_token_id = copy_token_item.id().clone();
             let quit_id = quit_item.id().clone();
 
@@ -2385,6 +2391,7 @@ fn run_setup_tray_app() {
             vault_menu.append(&path_item).ok();
             vault_menu.append(&PredefinedMenuItem::separator()).ok();
             vault_menu.append(&folder_item).ok();
+            vault_menu.append(&web_item).ok();
             vault_menu.append(&copy_token_item).ok();
             vault_menu.append(&PredefinedMenuItem::separator()).ok();
             vault_menu.append(&quit_item).ok();
@@ -2393,7 +2400,7 @@ fn run_setup_tray_app() {
             let _ = tray.borrow_mut().set_tooltip(Some("MDFlare Agent (🔐 Private Vault)"));
             tray.borrow_mut().set_icon(Some(load_icon_active())).ok();
 
-            *vault_menu_ids_loop.lock().unwrap() = Some((folder_id, copy_token_id, quit_id));
+            *vault_menu_ids_loop.lock().unwrap() = Some((folder_id, web_id, copy_token_id, quit_id));
         }
 
         {
