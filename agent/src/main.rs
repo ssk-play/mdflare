@@ -13,7 +13,7 @@ use axum::{
     Json, Router,
 };
 use directories::ProjectDirs;
-use muda::{Menu, MenuEvent, MenuItem, PredefinedMenuItem};
+use muda::{Menu, MenuEvent, MenuId, MenuItem, PredefinedMenuItem};
 use notify::RecursiveMode;
 use notify_debouncer_mini::{new_debouncer, DebouncedEventKind};
 use serde::{Deserialize, Serialize};
@@ -1285,13 +1285,31 @@ fn shorten_path(path: &str) -> String {
 }
 
 fn append_about(menu: &Menu) {
-    let about = MenuItem::new(
-        format!("MDFlare v{} ({})", env!("CARGO_PKG_VERSION"), env!("BUILD_DATE")),
-        false,
+    let about = MenuItem::with_id(
+        "about",
+        format!("about {}", env!("CARGO_PKG_VERSION")),
+        true,
         None,
     );
     menu.append(&about).ok();
     menu.append(&PredefinedMenuItem::separator()).ok();
+}
+
+fn show_about_dialog() {
+    rfd::MessageDialog::new()
+        .set_title("MDFlare Agent")
+        .set_description(&format!(
+            "버전: {}\n빌드: {}\n\n\
+            ⚠️ 현재 개발 중인 소프트웨어입니다.\n\
+            데이터가 예고 없이 삭제될 수 있으며,\n\
+            테스트 목적으로만 사용해 주세요.\n\n\
+            본 소프트웨어 사용으로 인한 데이터 손실에 대해\n\
+            개발자는 어떠한 책임도 지지 않습니다.",
+            env!("CARGO_PKG_VERSION"),
+            env!("BUILD_DATE"),
+        ))
+        .set_level(rfd::MessageLevel::Info)
+        .show();
 }
 
 fn run_cloud_tray_app(config: Config) {
@@ -1413,7 +1431,9 @@ fn run_cloud_tray_app(config: Config) {
     thread::spawn(move || {
         loop {
             if let Ok(event) = menu_receiver.recv() {
-                if event.id == sync_id {
+                if event.id == MenuId::new("about") {
+                    show_about_dialog();
+                } else if event.id == sync_id {
                     if let Ok(mut eng) = engine_clone.lock() {
                         eng.full_sync().ok();
                     }
@@ -1498,7 +1518,9 @@ fn run_private_vault_tray_app(config: Config) {
     thread::spawn(move || {
         loop {
             if let Ok(event) = menu_receiver.recv() {
-                if event.id == folder_id {
+                if event.id == MenuId::new("about") {
+                    show_about_dialog();
+                } else if event.id == folder_id {
                     open::that(&config_for_menu.local_path).ok();
                 } else if event.id == copy_token_id {
                     // 클립보드 복사는 플랫폼별로 다름
@@ -1908,8 +1930,10 @@ h1{font-size:18px;font-weight:600;text-align:center;margin-bottom:20px}
 .badge{font-size:10px;background:#86868b;color:#fff;padding:1px 6px;border-radius:8px;margin-left:auto}
 .cancel{display:block;width:100%;margin-top:16px;padding:8px;background:none;border:none;color:#86868b;font-size:13px;cursor:pointer;border-radius:8px;text-align:center}
 .cancel:hover{background:#e8e8ed}
+.notice{margin-bottom:16px;padding:10px 12px;background:#fff3cd;border-radius:8px;font-size:11px;color:#664d03;line-height:1.5}
 </style></head><body>
 <h1>동기화 방식 선택</h1>
+<div class="notice">⚠️ 개발 중인 소프트웨어입니다. 데이터가 예고 없이 삭제될 수 있으며, 테스트 목적으로만 사용해 주세요. 데이터 손실에 대해 개발자는 책임지지 않습니다.</div>
 <div class="cards">
   <div class="card" onclick="choose('cloud')">
     <div class="card-header"><span class="card-icon">☁️</span><span class="card-title">Cloud</span></div>
@@ -1984,6 +2008,10 @@ fn run_setup_tray_app() {
     thread::spawn(move || {
         loop {
             if let Ok(event) = menu_receiver.recv() {
+                if event.id == MenuId::new("about") {
+                    show_about_dialog();
+                    continue;
+                }
                 let current_phase = phase_menu.lock().unwrap().clone();
 
                 match current_phase {
