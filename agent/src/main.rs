@@ -154,6 +154,10 @@ impl Config {
             Self::default()
         };
         config.api_base = ServerSettings::load().api_base;
+        // server_token이 비어있으면 새로 생성 (연결 해제 후 재설정 시)
+        if config.server_token.is_empty() {
+            config.server_token = generate_token();
+        }
         config
     }
 
@@ -1515,8 +1519,10 @@ fn run_private_vault_tray_app(config: Config) {
     let menu = Menu::new();
     append_about(&menu);
 
+    let settings = ServerSettings::load();
+    let web_label = settings.api_base.replace("https://", "").replace("http://", "");
     let mode_item = MenuItem::new("🔐 Private Vault 모드", false, None);
-    let port_item = MenuItem::new(format!("🌐 http://localhost:{}", config.server_port), false, None);
+    let port_item = MenuItem::new(format!("🌐 {}", web_label), false, None);
     let path_item = MenuItem::new(format!("📁 {}", shorten_path(&config.local_path)), false, None);
     let folder_item = MenuItem::new("📂 폴더 열기", true, None);
     let web_item = MenuItem::new("🌐 웹페이지 열기", true, None);
@@ -2412,8 +2418,10 @@ fn run_setup_tray_app() {
         if let Some(config) = needs_vault_update_loop.lock().unwrap().take() {
             let vault_menu = Menu::new();
             append_about(&vault_menu);
+            let settings = ServerSettings::load();
+            let web_label = settings.api_base.replace("https://", "").replace("http://", "");
             let mode_item = MenuItem::new("🔐 Private Vault 모드", false, None);
-            let port_item = MenuItem::new(format!("🌐 http://localhost:{}", config.server_port), false, None);
+            let port_item = MenuItem::new(format!("🌐 {}", web_label), false, None);
             let path_item = MenuItem::new(format!("📁 {}", shorten_path(&config.local_path)), false, None);
             let folder_item = MenuItem::new("📂 폴더 열기", true, None);
             let web_item = MenuItem::new("🌐 웹페이지 열기", true, None);

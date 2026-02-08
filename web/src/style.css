@@ -1317,6 +1317,100 @@ body.light-mode .recent-item:hover { background: #eaeef2; color: #0969da; }
   box-shadow: 0 0 6px rgba(248, 81, 73, 0.6);
 }
 
+/* ===== Agent Disconnected Modal ===== */
+.agent-disconnected-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(4px);
+  z-index: 20000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.agent-disconnected-modal {
+  background: #161b22;
+  border: 1px solid #30363d;
+  border-radius: 16px;
+  padding: 40px 48px;
+  text-align: center;
+  max-width: 400px;
+}
+
+.agent-disconnected-icon {
+  font-size: 48px;
+  margin-bottom: 16px;
+}
+
+.agent-disconnected-modal h3 {
+  color: #f85149;
+  font-size: 20px;
+  margin: 0 0 12px;
+}
+
+.agent-disconnected-modal p {
+  color: #8b949e;
+  font-size: 14px;
+  line-height: 1.6;
+  margin: 0;
+}
+
+.agent-disconnected-spinner {
+  font-size: 24px;
+  margin: 20px 0 8px;
+  animation: spin 1.5s linear infinite;
+  color: #58a6ff;
+}
+
+.agent-disconnected-sub {
+  color: #58a6ff !important;
+  font-size: 13px !important;
+}
+
+.light-mode .agent-disconnected-modal {
+  background: #ffffff;
+  border-color: #d0d7de;
+}
+
+.light-mode .agent-disconnected-modal p {
+  color: #656d76;
+}
+
+.light-mode .agent-disconnected-sub {
+  color: #0969da !important;
+}
+
+.agent-disconnected-btn {
+  margin-top: 20px;
+  padding: 8px 24px;
+  background: transparent;
+  border: 1px solid #30363d;
+  border-radius: 8px;
+  color: #8b949e;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.agent-disconnected-btn:hover {
+  border-color: #f85149;
+  color: #f85149;
+}
+
+.light-mode .agent-disconnected-btn {
+  border-color: #d0d7de;
+  color: #656d76;
+}
+
+.light-mode .agent-disconnected-btn:hover {
+  border-color: #cf222e;
+  color: #cf222e;
+}
+
+.light-mode .agent-disconnected-spinner {
+  color: #0969da;
+}
+
 /* ===== Toast 알림 ===== */
 .toast-container {
   position: fixed;
