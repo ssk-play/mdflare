@@ -432,7 +432,10 @@ async fn check_auth(
 
 async fn api_list_files(
     State(state): State<ServerState>,
+    headers: axum::http::HeaderMap,
 ) -> Result<Json<FilesResponse>, StatusCode> {
+    let auth = headers.get(header::AUTHORIZATION).and_then(|v| v.to_str().ok());
+    check_auth(&state, auth).await?;
     let files = scan_local_md_files(&state.local_path);
     Ok(Json(FilesResponse {
         user: "local".to_string(),
@@ -442,8 +445,11 @@ async fn api_list_files(
 
 async fn api_get_file(
     State(state): State<ServerState>,
+    headers: axum::http::HeaderMap,
     AxumPath(path): AxumPath<String>,
 ) -> Result<Json<FileContent>, StatusCode> {
+    let auth = headers.get(header::AUTHORIZATION).and_then(|v| v.to_str().ok());
+    check_auth(&state, auth).await?;
     let decoded = urlencoding::decode(&path).map(|s| s.into_owned()).unwrap_or(path);
     let file_path = state.local_path.join(&decoded);
     
@@ -1534,7 +1540,7 @@ fn run_private_vault_tray_app(config: Config) {
                 } else if event.id == web_id {
                     let settings = ServerSettings::load();
                     let conn_token = generate_connection_token(config_for_menu.server_port, &config_for_menu.server_token);
-                    let url = format!("{}/?pvtoken={}", settings.api_base, conn_token);
+                    let url = format!("{}/?pvtoken={}", settings.api_base, urlencoding::encode(&conn_token));
                     open::that(url).ok();
                 } else if event.id == disconnect_id {
                     let mut config = Config::load();
@@ -2072,7 +2078,7 @@ fn run_setup_tray_app() {
                                 let settings = ServerSettings::load();
                                 let config = Config::load();
                                 let conn_token = generate_connection_token(config.server_port, &config.server_token);
-                                let url = format!("{}/?pvtoken={}", settings.api_base, conn_token);
+                                let url = format!("{}/?pvtoken={}", settings.api_base, urlencoding::encode(&conn_token));
                                 open::that(url).ok();
                             } else if &event.id == disconnect_id {
                                 let mut config = Config::load();
@@ -2201,7 +2207,7 @@ fn run_setup_tray_app() {
                         // 서버 준비 후 웹페이지 자동 열기 (토큰 포함)
                         let settings = ServerSettings::load();
                         let conn_token = generate_connection_token(config.server_port, &config.server_token);
-                        let web_url = format!("{}/?pvtoken={}", settings.api_base, conn_token);
+                        let web_url = format!("{}/?pvtoken={}", settings.api_base, urlencoding::encode(&conn_token));
                         thread::spawn(move || {
                             thread::sleep(Duration::from_millis(500));
                             open::that(web_url).ok();
