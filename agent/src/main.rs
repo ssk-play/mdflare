@@ -1284,11 +1284,22 @@ fn shorten_path(path: &str) -> String {
     }
 }
 
+fn append_about(menu: &Menu) {
+    let about = MenuItem::new(
+        format!("MDFlare v{} ({})", env!("CARGO_PKG_VERSION"), env!("BUILD_DATE")),
+        false,
+        None,
+    );
+    menu.append(&about).ok();
+    menu.append(&PredefinedMenuItem::separator()).ok();
+}
+
 fn run_cloud_tray_app(config: Config) {
     let event_loop = EventLoop::new();
     
     let menu = Menu::new();
-    
+    append_about(&menu);
+
     let mode_item = MenuItem::new("☁️ Cloud 모드", false, None);
     let user_item = MenuItem::new(format!("👤 {}", config.username), false, None);
     let path_item = MenuItem::new(format!("📁 {}", shorten_path(&config.local_path)), false, None);
@@ -1444,14 +1455,15 @@ fn run_private_vault_tray_app(config: Config) {
     let connection_token = generate_connection_token(config.server_port, &config.server_token);
     
     let menu = Menu::new();
-    
+    append_about(&menu);
+
     let mode_item = MenuItem::new("🔐 Private Vault 모드", false, None);
     let port_item = MenuItem::new(format!("🌐 http://localhost:{}", config.server_port), false, None);
     let path_item = MenuItem::new(format!("📁 {}", shorten_path(&config.local_path)), false, None);
     let folder_item = MenuItem::new("📂 폴더 열기", true, None);
     let copy_token_item = MenuItem::new("📋 연결 토큰 복사", true, None);
     let quit_item = MenuItem::new("종료", true, None);
-    
+
     menu.append(&mode_item).ok();
     menu.append(&port_item).ok();
     menu.append(&path_item).ok();
@@ -1535,6 +1547,7 @@ fn run_private_vault_tray_app(config: Config) {
 
 fn build_cloud_menu(config: &Config) -> (Menu, muda::MenuId, muda::MenuId, muda::MenuId, muda::MenuId, muda::MenuId) {
     let menu = Menu::new();
+    append_about(&menu);
     let mode_item = MenuItem::new("☁️ Cloud 모드", false, None);
     let user_item = MenuItem::new(format!("👤 {}", config.username), false, None);
     let path_item = MenuItem::new(format!("📁 {}", shorten_path(&config.local_path)), false, None);
@@ -1916,6 +1929,7 @@ fn run_setup_tray_app() {
 
     // 초기 메뉴: 미설정 상태
     let menu = Menu::new();
+    append_about(&menu);
     let settings_for_menu = ServerSettings::load();
     let server_label = format!("🌐 {}", settings_for_menu.api_base.replace("https://", "").replace("http://", ""));
     let server_item = MenuItem::new(&server_label, true, None);
@@ -2318,6 +2332,7 @@ fn run_setup_tray_app() {
 
         if let Some(config) = needs_vault_update_loop.lock().unwrap().take() {
             let vault_menu = Menu::new();
+            append_about(&vault_menu);
             let mode_item = MenuItem::new("🔐 Private Vault 모드", false, None);
             let port_item = MenuItem::new(format!("🌐 http://localhost:{}", config.server_port), false, None);
             let path_item = MenuItem::new(format!("📁 {}", shorten_path(&config.local_path)), false, None);
@@ -2350,6 +2365,7 @@ fn run_setup_tray_app() {
             if *flag {
                 *flag = false;
                 let waiting_menu = Menu::new();
+                append_about(&waiting_menu);
                 let status_item = MenuItem::new("☁️ 브라우저에서 로그인 중...", false, None);
                 let quit_item = MenuItem::new("종료", true, None);
                 waiting_menu.append(&status_item).ok();
