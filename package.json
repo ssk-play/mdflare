@@ -1,6 +1,6 @@
 {
   "name": "mdflare",
-  "version": "1.0.11",
+  "version": "1.0.12",
   "private": true,
   "description": "🔥 MDFlare — Local markdown folder sync to web",
   "scripts": {
