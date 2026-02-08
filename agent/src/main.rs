@@ -1489,7 +1489,9 @@ fn run_private_vault_tray_app(config: Config) {
     let port_item = MenuItem::new(format!("🌐 http://localhost:{}", config.server_port), false, None);
     let path_item = MenuItem::new(format!("📁 {}", shorten_path(&config.local_path)), false, None);
     let folder_item = MenuItem::new("📂 폴더 열기", true, None);
+    let web_item = MenuItem::new("🌐 웹페이지 열기", true, None);
     let copy_token_item = MenuItem::new("📋 연결 토큰 복사", true, None);
+    let disconnect_item = MenuItem::new("🔌 연결 해제", true, None);
     let quit_item = MenuItem::new("종료", true, None);
 
     menu.append(&mode_item).ok();
@@ -1497,12 +1499,16 @@ fn run_private_vault_tray_app(config: Config) {
     menu.append(&path_item).ok();
     menu.append(&PredefinedMenuItem::separator()).ok();
     menu.append(&folder_item).ok();
+    menu.append(&web_item).ok();
     menu.append(&copy_token_item).ok();
     menu.append(&PredefinedMenuItem::separator()).ok();
+    menu.append(&disconnect_item).ok();
     menu.append(&quit_item).ok();
-    
+
     let folder_id = folder_item.id().clone();
+    let web_id = web_item.id().clone();
     let copy_token_id = copy_token_item.id().clone();
+    let disconnect_id = disconnect_item.id().clone();
     let quit_id = quit_item.id().clone();
     
     let _tray = TrayIconBuilder::new()
@@ -1530,6 +1536,10 @@ fn run_private_vault_tray_app(config: Config) {
                     show_about_dialog();
                 } else if event.id == folder_id {
                     open::that(&config_for_menu.local_path).ok();
+                } else if event.id == web_id {
+                    let settings = ServerSettings::load();
+                    let url = format!("{}/private", settings.api_base);
+                    open::that(url).ok();
                 } else if event.id == copy_token_id {
                     // 클립보드 복사는 플랫폼별로 다름
                     #[cfg(target_os = "macos")]
@@ -1554,6 +1564,15 @@ fn run_private_vault_tray_app(config: Config) {
                             .ok();
                     }
                     println!("📋 연결 토큰이 클립보드에 복사되었습니다");
+                } else if event.id == disconnect_id {
+                    let mut config = Config::load();
+                    config.local_path.clear();
+                    config.server_token.clear();
+                    config.save();
+                    log_to_file("vault: disconnect → config cleared, restarting");
+                    let exe = std::env::current_exe().unwrap();
+                    std::process::Command::new(exe).spawn().ok();
+                    std::process::exit(0);
                 } else if event.id == quit_id {
                     std::process::exit(0);
                 }
@@ -1991,7 +2010,7 @@ fn run_setup_tray_app() {
     let phase = Arc::new(Mutex::new(AppPhase::Setup));
     let cloud_state: Arc<Mutex<Option<(Config, Arc<Mutex<SyncEngine>>)>>> = Arc::new(Mutex::new(None));
     let cloud_menu_ids: Arc<Mutex<Option<(muda::MenuId, muda::MenuId, muda::MenuId, muda::MenuId, muda::MenuId)>>> = Arc::new(Mutex::new(None));
-    let vault_menu_ids: Arc<Mutex<Option<(muda::MenuId, muda::MenuId, muda::MenuId, muda::MenuId)>>> = Arc::new(Mutex::new(None));
+    let vault_menu_ids: Arc<Mutex<Option<(muda::MenuId, muda::MenuId, muda::MenuId, muda::MenuId, muda::MenuId)>>> = Arc::new(Mutex::new(None));
     let needs_show_mode_dialog: Arc<Mutex<bool>> = Arc::new(Mutex::new(false));
     let dialog_choice: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
     let needs_show_folder_dialog: Arc<Mutex<bool>> = Arc::new(Mutex::new(false));
@@ -2070,7 +2089,7 @@ fn run_setup_tray_app() {
                         }
                     }
                     AppPhase::Vault => {
-                        if let Some((folder_id, web_id, copy_token_id, quit_id)) = vault_menu_ids_menu.lock().unwrap().as_ref() {
+                        if let Some((folder_id, web_id, copy_token_id, disconnect_id, quit_id)) = vault_menu_ids_menu.lock().unwrap().as_ref() {
                             if &event.id == quit_id {
                                 std::process::exit(0);
                             } else if &event.id == folder_id {
@@ -2081,6 +2100,15 @@ fn run_setup_tray_app() {
                                 let settings = ServerSettings::load();
                                 let url = format!("{}/private", settings.api_base);
                                 open::that(url).ok();
+                            } else if &event.id == disconnect_id {
+                                let mut config = Config::load();
+                                config.local_path.clear();
+                                config.server_token.clear();
+                                config.save();
+                                log_to_file("vault: disconnect → config cleared, restarting");
+                                let exe = std::env::current_exe().unwrap();
+                                std::process::Command::new(exe).spawn().ok();
+                                std::process::exit(0);
                             } else if &event.id == copy_token_id {
                                 // 클립보드 복사
                                 let config = Config::load();
@@ -2379,11 +2407,13 @@ fn run_setup_tray_app() {
             let folder_item = MenuItem::new("📂 폴더 열기", true, None);
             let web_item = MenuItem::new("🌐 웹페이지 열기", true, None);
             let copy_token_item = MenuItem::new("📋 연결 토큰 복사", true, None);
+            let disconnect_item = MenuItem::new("🔌 연결 해제", true, None);
             let quit_item = MenuItem::new("종료", true, None);
 
             let folder_id = folder_item.id().clone();
             let web_id = web_item.id().clone();
             let copy_token_id = copy_token_item.id().clone();
+            let disconnect_id = disconnect_item.id().clone();
             let quit_id = quit_item.id().clone();
 
             vault_menu.append(&mode_item).ok();
@@ -2394,13 +2424,14 @@ fn run_setup_tray_app() {
             vault_menu.append(&web_item).ok();
             vault_menu.append(&copy_token_item).ok();
             vault_menu.append(&PredefinedMenuItem::separator()).ok();
+            vault_menu.append(&disconnect_item).ok();
             vault_menu.append(&quit_item).ok();
 
             tray.borrow_mut().set_menu(Some(Box::new(vault_menu)));
             let _ = tray.borrow_mut().set_tooltip(Some("MDFlare Agent (🔐 Private Vault)"));
             tray.borrow_mut().set_icon(Some(load_icon_active())).ok();
 
-            *vault_menu_ids_loop.lock().unwrap() = Some((folder_id, web_id, copy_token_id, quit_id));
+            *vault_menu_ids_loop.lock().unwrap() = Some((folder_id, web_id, copy_token_id, disconnect_id, quit_id));
         }
 
         {
