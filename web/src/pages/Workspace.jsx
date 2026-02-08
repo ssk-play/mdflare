@@ -240,6 +240,7 @@ export default function Workspace({ user, isPrivateVault = false }) {
 
   // Firebase 변경 감지 (refs 사용 → 리스너 재구독 최소화)
   useEffect(() => {
+    if (isPrivateVault) return; // Private Vault에서는 Firebase 리스너 불필요
     const unsubscribe = onFilesChanged(userId, async (changedFiles) => {
       if (currentFile) {
         const changed = changedFiles.find(f => f.path === currentFile.path);
@@ -277,13 +278,13 @@ export default function Workspace({ user, isPrivateVault = false }) {
 
   // 파일 열기 (URL 변경 + 최근 파일 기록)
   const openFile = useCallback((fp) => {
-    navigate(`/${userId}/${fp}`);
+    navigate(isPrivateVault ? `/private/${fp}` : `/${userId}/${fp}`);
     setRecentFiles(prev => {
       const updated = [fp, ...prev.filter(f => f !== fp)].slice(0, 10);
       localStorage.setItem('mdflare-recent', JSON.stringify(updated));
       return updated;
     });
-  }, [userId, navigate]);
+  }, [userId, isPrivateVault, navigate]);
 
   // 자동 저장 (savedContentRef 사용 → 불필요한 재생성 방지)
   const doSave = useCallback(async (fp, newContent) => {
@@ -546,7 +547,7 @@ export default function Workspace({ user, isPrivateVault = false }) {
       await loadFiles();
       updateToast(tid, `🗑️ "${name}" ${label} 삭제 완료`, 'success');
       if (currentFile?.path === fp || (isFolder && currentFile?.path?.startsWith(fp + '/'))) {
-        navigate(`/${userId}`);
+        navigate(isPrivateVault ? '/private' : `/${userId}`);
       }
     } catch (err) {
       console.error('Failed to delete:', err);
@@ -595,7 +596,14 @@ export default function Workspace({ user, isPrivateVault = false }) {
   };
 
   const handleLogout = async () => {
-    await logout();
+    if (isPrivateVault) {
+      localStorage.removeItem('mdflare_mode');
+      localStorage.removeItem('mdflare_server_url');
+      localStorage.removeItem('mdflare_token');
+      localStorage.removeItem('mdflare_use_proxy');
+    } else {
+      await logout();
+    }
     navigate('/');
   };
 
@@ -653,12 +661,12 @@ export default function Workspace({ user, isPrivateVault = false }) {
           <button className="sidebar-toggle" onClick={() => setSidebarOpen(!sidebarOpen)}>
             {sidebarOpen ? '✕' : '☰'}
           </button>
-          <h1 onClick={() => navigate(`/${userId}`)} style={{ cursor: 'pointer' }}>🔥 {getAppName()}</h1>
+          <h1 onClick={() => navigate(isPrivateVault ? '/private' : `/${userId}`)} style={{ cursor: 'pointer' }}>🔥 {getAppName()}</h1>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <AgentStatus userId={userId} isPrivateVault={isPrivateVault} />
-          <span className="user-badge">👤 {user?.displayName || userId}</span>
-          <button className="logout-btn" onClick={handleLogout}>로그아웃</button>
+          <span className="user-badge">{isPrivateVault ? '🔐 Private Vault' : `👤 ${user?.displayName || userId}`}</span>
+          <button className="logout-btn" onClick={handleLogout}>{isPrivateVault ? '연결 해제' : '로그아웃'}</button>
         </div>
       </header>
 
@@ -757,6 +765,7 @@ export default function Workspace({ user, isPrivateVault = false }) {
                     setContent(prev => prev + '\n' + md + '\n');
                     addToast('🖼️ 이미지 삽입됨', 'success', 2000);
                   }} title="이미지 삽입">🖼️</button>
+                  {!isPrivateVault && (
                   <button className="tab-btn" onClick={async () => {
                     const shareUrl = `${window.location.origin}/${userId}/${currentFile.path}`;
                     try {
@@ -766,6 +775,7 @@ export default function Workspace({ user, isPrivateVault = false }) {
                       prompt('공유 링크:', shareUrl);
                     }
                   }} title="공유 링크 복사">🔗</button>
+                  )}
                   <button className="tab-btn" onClick={() => setLightMode(!lightMode)} title="테마 전환">{lightMode ? '🌙' : '☀️'}</button>
                   <button className="tab-btn" onClick={() => {
                     if (document.fullscreenElement) {
