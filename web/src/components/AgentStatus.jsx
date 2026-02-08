@@ -25,9 +25,11 @@ export default function AgentStatus({ userId, isPrivateVault = false }) {
         } else {
           url = `${pv.serverUrl}/api/files`;
         }
+        const headers = {};
+        if (pv.token) headers['Authorization'] = `Bearer ${pv.token}`;
         const controller = new AbortController();
         const timer = setTimeout(() => controller.abort(), 3000);
-        const res = await fetch(url, { signal: controller.signal });
+        const res = await fetch(url, { headers, signal: controller.signal });
         clearTimeout(timer);
         setConnected(res.ok);
         setMinutesAgo(null);
