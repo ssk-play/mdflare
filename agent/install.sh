@@ -1,4 +1,5 @@
 #!/bin/bash
+set -e
 # MDFlare Agent 설치 스크립트
 
 APP_NAME="MDFlare Agent.app"
@@ -13,11 +14,11 @@ fi
 
 echo "MDFlare Agent 설치 중..."
 
-# 기존 앱 종료
-pkill -f "mdflare-agent" 2>/dev/null
-
-# 복사
-rm -rf "$DEST"
+# 기존 앱 종료 및 교체
+if [ -d "$DEST" ]; then
+    pkill -f "mdflare-agent" 2>/dev/null || true
+    rm -rf "$DEST"
+fi
 cp -R "$SRC" "$DEST"
 
 # Gatekeeper quarantine 제거
