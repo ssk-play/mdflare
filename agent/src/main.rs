@@ -1282,6 +1282,31 @@ fn load_icon_setup() -> Icon {
     Icon::from_rgba(rgba, size, size).expect("Failed to create setup icon")
 }
 
+fn copy_to_clipboard(text: &str) {
+    #[cfg(target_os = "macos")]
+    {
+        let ok = std::process::Command::new("pbcopy")
+            .stdin(std::process::Stdio::piped())
+            .spawn()
+            .and_then(|mut child| {
+                use std::io::Write;
+                if let Some(stdin) = child.stdin.as_mut() {
+                    stdin.write_all(text.as_bytes()).ok();
+                }
+                child.wait()
+            })
+            .map(|s| s.success())
+            .unwrap_or(false);
+
+        if ok {
+            std::process::Command::new("osascript")
+                .args(["-e", "display notification \"연결 토큰이 클립보드에 복사되었습니다\" with title \"MDFlare\""])
+                .spawn()
+                .ok();
+        }
+    }
+}
+
 fn shorten_path(path: &str) -> String {
     if let Some(home) = dirs::home_dir() {
         path.replace(&home.to_string_lossy().to_string(), "~")
@@ -1547,20 +1572,7 @@ fn run_private_vault_tray_app(config: Config) {
                     open::that(url).ok();
                 } else if event.id == copy_token_id {
                     let conn_token = generate_connection_token(config_for_menu.server_port, &config_for_menu.server_token);
-                    #[cfg(target_os = "macos")]
-                    {
-                        std::process::Command::new("pbcopy")
-                            .stdin(std::process::Stdio::piped())
-                            .spawn()
-                            .and_then(|mut child| {
-                                use std::io::Write;
-                                if let Some(stdin) = child.stdin.as_mut() {
-                                    stdin.write_all(conn_token.as_bytes()).ok();
-                                }
-                                child.wait()
-                            })
-                            .ok();
-                    }
+                    copy_to_clipboard(&conn_token);
                 } else if event.id == disconnect_id {
                     let mut config = Config::load();
                     config.local_path.clear();
@@ -2102,20 +2114,7 @@ fn run_setup_tray_app() {
                             } else if &event.id == copy_token_id {
                                 let config = Config::load();
                                 let conn_token = generate_connection_token(config.server_port, &config.server_token);
-                                #[cfg(target_os = "macos")]
-                                {
-                                    std::process::Command::new("pbcopy")
-                                        .stdin(std::process::Stdio::piped())
-                                        .spawn()
-                                        .and_then(|mut child| {
-                                            use std::io::Write;
-                                            if let Some(stdin) = child.stdin.as_mut() {
-                                                stdin.write_all(conn_token.as_bytes()).ok();
-                                            }
-                                            child.wait()
-                                        })
-                                        .ok();
-                                }
+                                copy_to_clipboard(&conn_token);
                             } else if &event.id == disconnect_id {
                                 let mut config = Config::load();
                                 config.local_path.clear();
