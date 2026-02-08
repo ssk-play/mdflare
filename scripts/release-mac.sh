@@ -34,8 +34,9 @@ sed -e "s/<string>1\.0\.5</<string>$VERSION</" \
 
 cp "$BINARY" "$APP_DIR/Contents/MacOS/mdflare-agent"
 
-# 3. zip 패키징
-(cd /tmp && zip -r "$ZIP" "MDFlare Agent.app")
+# 3. install.sh 복사 + zip 패키징
+cp "$ROOT_DIR/agent/install.sh" /tmp/install.sh
+(cd /tmp && zip -r "$ZIP" "MDFlare Agent.app" install.sh)
 SIZE=$(du -h "$ZIP" | cut -f1 | xargs)
 
 echo "📤 업로드 중... ($SIZE)"
@@ -48,7 +49,7 @@ echo "{\"version\":\"$VERSION\",\"size\":\"$SIZE\",\"date\":\"$(date +%Y-%m-%d)\
   gsutil -h "Content-Type:application/json" cp - "$BUCKET/meta.json"
 
 # 정리
-rm -rf "$APP_DIR" "$ZIP"
+rm -rf "$APP_DIR" "$ZIP" /tmp/install.sh
 
 echo ""
 echo "✅ v$VERSION 배포 완료"
