@@ -1284,10 +1284,18 @@ fn shorten_path(path: &str) -> String {
     }
 }
 
+fn version_string() -> String {
+    if cfg!(debug_assertions) {
+        format!("{}-d", env!("CARGO_PKG_VERSION"))
+    } else {
+        env!("CARGO_PKG_VERSION").to_string()
+    }
+}
+
 fn append_about(menu: &Menu) {
     let about = MenuItem::with_id(
         "about",
-        format!("about {}", env!("CARGO_PKG_VERSION")),
+        format!("about {}", version_string()),
         true,
         None,
     );
@@ -1305,7 +1313,7 @@ fn show_about_dialog() {
             테스트 목적으로만 사용해 주세요.\n\n\
             본 소프트웨어 사용으로 인한 데이터 손실에 대해\n\
             개발자는 어떠한 책임도 지지 않습니다.",
-            env!("CARGO_PKG_VERSION"),
+            version_string(),
             env!("BUILD_DATE"),
         ))
         .set_level(rfd::MessageLevel::Info)
