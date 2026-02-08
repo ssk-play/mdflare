@@ -8,10 +8,12 @@ VERSION=$(cat "$ROOT_DIR/VERSION" | tr -d '[:space:]')
 source "$HOME/.cargo/env" 2>/dev/null || true
 
 PROFILE="debug"
+CLEAN=false
 for arg in "$@"; do
   case "$arg" in
     --release) PROFILE="release" ;;
     --debug)   PROFILE="debug" ;;
+    --clean)   CLEAN=true ;;
   esac
 done
 
@@ -43,6 +45,12 @@ cp "$ROOT_DIR/agent/macos/AppIcon.icns" "$APP_DIR/Contents/Resources/AppIcon.icn
 # quarantine 제거 + URL scheme 등록
 xattr -cr "$APP_DIR"
 /System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/LaunchServices.framework/Versions/A/Support/lsregister -f "$APP_DIR"
+
+if $CLEAN; then
+  CONFIG_DIR="$HOME/Library/Application Support/com.mdflare.agent"
+  rm -rf "$CONFIG_DIR"
+  echo "🧹 설정 초기화 ($CONFIG_DIR 삭제)"
+fi
 
 echo "📦 /Applications에 설치 (URL scheme 중복 등록 방지)"
 echo "🚀 실행 중..."
