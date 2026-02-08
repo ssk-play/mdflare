@@ -44,16 +44,56 @@ impl Default for StorageMode {
 // ============================================================================
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+struct ServerSettings {
+    api_base: String,
+}
+
+impl Default for ServerSettings {
+    fn default() -> Self {
+        Self {
+            api_base: "https://mdflare.com".to_string(),
+        }
+    }
+}
+
+impl ServerSettings {
+    fn settings_path() -> PathBuf {
+        let proj = ProjectDirs::from("com", "mdflare", "agent")
+            .expect("Failed to get config directory");
+        let dir = proj.config_dir();
+        fs::create_dir_all(dir).ok();
+        dir.join("server_settings.json")
+    }
+
+    fn load() -> Self {
+        let path = Self::settings_path();
+        if let Ok(data) = fs::read_to_string(&path) {
+            serde_json::from_str(&data).unwrap_or_default()
+        } else {
+            Self::default()
+        }
+    }
+
+    fn save(&self) {
+        let path = Self::settings_path();
+        if let Ok(data) = serde_json::to_string_pretty(self) {
+            fs::write(path, data).ok();
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 struct Config {
     // 공통
     storage_mode: StorageMode,
     local_path: String,
-    
-    // Cloud 모드 전용
+
+    // Cloud 모드 전용 (api_base는 server_settings.json에서 로드)
+    #[serde(skip)]
     api_base: String,
     username: String,
     api_token: String,
-    
+
     // Private Vault 모드 전용
     server_port: u16,
     server_token: String,
@@ -61,12 +101,10 @@ struct Config {
 
 impl Default for Config {
     fn default() -> Self {
-        let api_base = std::env::var("MDFLARE_API_BASE")
-            .unwrap_or_else(|_| "https://mdflare.com".to_string());
         Self {
             storage_mode: StorageMode::Cloud,
             local_path: String::new(),
-            api_base,
+            api_base: String::new(),
             username: String::new(),
             api_token: String::new(),
             server_port: 7779,
@@ -110,15 +148,12 @@ impl Config {
 
     fn load() -> Self {
         let path = Self::config_path();
-        let mut config = if let Ok(data) = fs::read_to_string(&path) {
+        let mut config: Self = if let Ok(data) = fs::read_to_string(&path) {
             serde_json::from_str(&data).unwrap_or_default()
         } else {
             Self::default()
         };
-        // 환경변수가 있으면 항상 우선
-        if let Ok(base) = std::env::var("MDFLARE_API_BASE") {
-            config.api_base = base;
-        }
+        config.api_base = ServerSettings::load().api_base;
         config
     }
 
@@ -1745,6 +1780,66 @@ function setPath(p){ currentPath = p; document.getElementById('path').textConten
 </script>
 </body></html>"#;
 
+const SERVER_SELECTION_HTML: &str = r#"<!DOCTYPE html>
+<html><head><meta charset="utf-8"><style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;background:#f5f5f7;padding:32px 24px 24px;color:#1d1d1f;-webkit-user-select:none;user-select:none}
+h1{font-size:18px;font-weight:600;text-align:center;margin-bottom:20px}
+.options{display:flex;flex-direction:column;gap:8px}
+.opt{background:#fff;border-radius:10px;padding:12px 16px;cursor:pointer;border:2px solid transparent;transition:all .15s;box-shadow:0 1px 3px rgba(0,0,0,.08);display:flex;align-items:center;gap:10px}
+.opt:hover{border-color:#0071e3}
+.opt.active{border-color:#0071e3;background:#f0f7ff}
+.opt-icon{font-size:20px}
+.opt-label{font-size:14px;font-weight:500}
+.opt-desc{font-size:11px;color:#86868b}
+.custom-input{display:none;margin-top:12px}
+.custom-input input{width:100%;padding:10px 12px;font-size:14px;border:1px solid #d2d2d7;border-radius:8px;outline:none;background:#fff}
+.custom-input input:focus{border-color:#0071e3}
+.btn{display:block;width:100%;margin-top:16px;padding:10px;border-radius:10px;font-size:14px;font-weight:500;cursor:pointer;border:none;background:#0071e3;color:#fff;text-align:center}
+.btn:hover{background:#0077ED}
+.btn:active{transform:scale(.98)}
+.cancel{display:block;width:100%;margin-top:8px;padding:8px;background:none;border:none;color:#86868b;font-size:13px;cursor:pointer;border-radius:8px;text-align:center}
+.cancel:hover{background:#e8e8ed}
+</style></head><body>
+<h1>서버 설정</h1>
+<div class="options">
+  <div class="opt active" onclick="select(0)" id="o0">
+    <span class="opt-icon">🌐</span>
+    <div><div class="opt-label">mdflare.com</div><div class="opt-desc">클라우드 서버 (기본)</div></div>
+  </div>
+  <div class="opt" onclick="select(1)" id="o1">
+    <span class="opt-icon">🖥️</span>
+    <div><div class="opt-label">localhost:3000</div><div class="opt-desc">로컬 개발 서버</div></div>
+  </div>
+  <div class="opt" onclick="select(2)" id="o2">
+    <span class="opt-icon">⚙️</span>
+    <div><div class="opt-label">직접 입력</div><div class="opt-desc">커스텀 서버 주소</div></div>
+  </div>
+</div>
+<div class="custom-input" id="ci">
+  <input type="text" id="cu" placeholder="https://example.com" spellcheck="false">
+</div>
+<div class="btn" onclick="confirm()">확인</div>
+<div class="cancel" onclick="window.ipc.postMessage('cancel')">취소</div>
+<script>
+let sel=0;
+const urls=['https://mdflare.com','http://localhost:3000',''];
+function select(i){
+  sel=i;
+  document.querySelectorAll('.opt').forEach((e,j)=>{e.className=j===i?'opt active':'opt'});
+  document.getElementById('ci').style.display=i===2?'block':'none';
+  if(i===2)document.getElementById('cu').focus();
+}
+function confirm(){
+  let url=sel===2?document.getElementById('cu').value.trim():urls[sel];
+  if(!url)return;
+  url=url.replace(/\/+$/,'');
+  window.ipc.postMessage('server:'+url);
+}
+select(CURRENT_SEL);
+</script>
+</body></html>"#;
+
 const MODE_SELECTION_HTML: &str = r#"<!DOCTYPE html>
 <html><head><meta charset="utf-8"><style>
 *{margin:0;padding:0;box-sizing:border-box}
@@ -1783,13 +1878,19 @@ fn run_setup_tray_app() {
 
     // 초기 메뉴: 미설정 상태
     let menu = Menu::new();
+    let settings_for_menu = ServerSettings::load();
+    let server_label = format!("🌐 {}", settings_for_menu.api_base.replace("https://", "").replace("http://", ""));
+    let server_item = MenuItem::new(&server_label, true, None);
     let start_item = MenuItem::new("시작하기", true, None);
     let quit_item = MenuItem::new("종료", true, None);
 
+    menu.append(&server_item).ok();
+    menu.append(&PredefinedMenuItem::separator()).ok();
     menu.append(&start_item).ok();
     menu.append(&PredefinedMenuItem::separator()).ok();
     menu.append(&quit_item).ok();
 
+    let server_id = server_item.id().clone();
     let start_id = start_item.id().clone();
     let quit_id = quit_item.id().clone();
 
@@ -1812,6 +1913,8 @@ fn run_setup_tray_app() {
     let needs_show_folder_dialog: Arc<Mutex<bool>> = Arc::new(Mutex::new(false));
     let folder_choice: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
     let pending_cloud_config: Arc<Mutex<Option<Config>>> = Arc::new(Mutex::new(None));
+    let needs_show_server_dialog: Arc<Mutex<bool>> = Arc::new(Mutex::new(false));
+    let server_choice: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
 
     let phase_loop = phase.clone();
     let cloud_state_loop = cloud_state.clone();
@@ -1824,6 +1927,7 @@ fn run_setup_tray_app() {
     let cloud_menu_ids_menu = cloud_menu_ids.clone();
     let vault_menu_ids_menu = vault_menu_ids.clone();
     let needs_show_mode_dialog_menu = needs_show_mode_dialog.clone();
+    let needs_show_server_dialog_menu = needs_show_server_dialog.clone();
 
     thread::spawn(move || {
         loop {
@@ -1834,6 +1938,8 @@ fn run_setup_tray_app() {
                     AppPhase::Setup => {
                         if event.id == start_id {
                             *needs_show_mode_dialog_menu.lock().unwrap() = true;
+                        } else if event.id == server_id {
+                            *needs_show_server_dialog_menu.lock().unwrap() = true;
                         } else if event.id == quit_id {
                             std::process::exit(0);
                         }
@@ -1863,9 +1969,12 @@ fn run_setup_tray_app() {
                                     open::that(url).ok();
                                 }
                             } else if &event.id == logoff_id {
-                                let path = Config::config_path();
-                                fs::remove_file(&path).ok();
-                                log_to_file("cloud: logoff → config deleted, restarting");
+                                let mut config = Config::load();
+                                config.username.clear();
+                                config.api_token.clear();
+                                config.local_path.clear();
+                                config.save();
+                                log_to_file("cloud: logoff → credentials cleared, restarting");
                                 let exe = std::env::current_exe().unwrap();
                                 std::process::Command::new(exe).spawn().ok();
                                 std::process::exit(0);
@@ -1944,10 +2053,14 @@ fn run_setup_tray_app() {
     let needs_show_folder_dialog_loop = needs_show_folder_dialog.clone();
     let folder_choice_loop = folder_choice.clone();
     let pending_cloud_config_loop = pending_cloud_config.clone();
+    let needs_show_server_dialog_loop = needs_show_server_dialog.clone();
+    let server_choice_loop = server_choice.clone();
     let mut mode_dialog_webview: Option<wry::WebView> = None;
     let mut mode_dialog_window: Option<tao::window::Window> = None;
     let mut folder_dialog_webview: Option<wry::WebView> = None;
     let mut folder_dialog_window: Option<tao::window::Window> = None;
+    let mut server_dialog_webview: Option<wry::WebView> = None;
+    let mut server_dialog_window: Option<tao::window::Window> = None;
 
     event_loop.run(move |event, target, control_flow| {
         *control_flow = ControlFlow::WaitUntil(
@@ -2097,6 +2210,61 @@ fn run_setup_tray_app() {
             }
         }
 
+        // 서버 설정 다이얼로그 표시
+        {
+            let mut flag = needs_show_server_dialog_loop.lock().unwrap();
+            if *flag {
+                *flag = false;
+                let settings = ServerSettings::load();
+                let current_sel = match settings.api_base.as_str() {
+                    "https://mdflare.com" => 0,
+                    "http://localhost:3000" => 1,
+                    _ => 2,
+                };
+                let html = SERVER_SELECTION_HTML.replace("CURRENT_SEL", &current_sel.to_string());
+                let html = if current_sel == 2 {
+                    html.replace("https://example.com", &settings.api_base)
+                } else {
+                    html
+                };
+
+                let window = tao::window::WindowBuilder::new()
+                    .with_title("MDFlare")
+                    .with_inner_size(tao::dpi::LogicalSize::new(380.0, 380.0))
+                    .with_resizable(false)
+                    .build(target)
+                    .expect("Failed to create server dialog window");
+
+                let sc = server_choice_loop.clone();
+                let webview = wry::WebViewBuilder::new(&window)
+                    .with_html(&html)
+                    .with_ipc_handler(move |req| {
+                        *sc.lock().unwrap() = Some(req.body().clone());
+                    })
+                    .build()
+                    .expect("Failed to create server webview");
+
+                server_dialog_window = Some(window);
+                server_dialog_webview = Some(webview);
+            }
+        }
+
+        // 서버 설정 결과 처리
+        if let Some(choice) = server_choice_loop.lock().unwrap().take() {
+            server_dialog_webview.take();
+            server_dialog_window.take();
+
+            if let Some(url) = choice.strip_prefix("server:") {
+                let mut settings = ServerSettings::load();
+                settings.api_base = url.to_string();
+                settings.save();
+                log_to_file(&format!("setup: server changed → {}", url));
+
+                let label = format!("🌐 {}", url.replace("https://", "").replace("http://", ""));
+                server_item.set_text(&label);
+            }
+        }
+
         // 트레이 업데이트 폴링
         if let Some(config) = needs_cloud_update_loop.lock().unwrap().take() {
             let (cloud_menu, sync_id, folder_id, web_id, logoff_id, quit_id) = build_cloud_menu(&config);
@@ -2159,6 +2327,8 @@ fn run_setup_tray_app() {
                 // 다이얼로그 닫기 (X 버튼)
                 mode_dialog_webview.take();
                 mode_dialog_window.take();
+                server_dialog_webview.take();
+                server_dialog_window.take();
                 if folder_dialog_webview.is_some() {
                     folder_dialog_webview.take();
                     folder_dialog_window.take();
