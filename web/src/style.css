@@ -1381,6 +1381,32 @@ body.light-mode .recent-item:hover { background: #eaeef2; color: #0969da; }
   color: #0969da !important;
 }
 
+.agent-disconnected-btn {
+  margin-top: 20px;
+  padding: 8px 24px;
+  background: transparent;
+  border: 1px solid #30363d;
+  border-radius: 8px;
+  color: #8b949e;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.agent-disconnected-btn:hover {
+  border-color: #f85149;
+  color: #f85149;
+}
+
+.light-mode .agent-disconnected-btn {
+  border-color: #d0d7de;
+  color: #656d76;
+}
+
+.light-mode .agent-disconnected-btn:hover {
+  border-color: #cf222e;
+  color: #cf222e;
+}
+
 .light-mode .agent-disconnected-spinner {
   color: #0969da;
 }

@@ -893,6 +893,7 @@ export default function Workspace({ user, isPrivateVault = false }) {
             <p>Private Vault 에이전트와 연결이 끊어졌습니다.<br/>에이전트가 다시 연결되면 자동으로 복구됩니다.</p>
             <div className="agent-disconnected-spinner">⟳</div>
             <p className="agent-disconnected-sub">재연결 대기 중...</p>
+            <button className="agent-disconnected-btn" onClick={handleLogout}>연결 해제</button>
           </div>
         </div>
       )}
