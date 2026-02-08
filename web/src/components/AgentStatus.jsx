@@ -9,7 +9,7 @@ function getPrivateVaultConfig() {
   };
 }
 
-export default function AgentStatus({ userId, isPrivateVault = false }) {
+export default function AgentStatus({ userId, isPrivateVault = false, onConnectionChange }) {
   const [connected, setConnected] = useState(null); // null = loading
   const [minutesAgo, setMinutesAgo] = useState(null);
 
@@ -31,8 +31,10 @@ export default function AgentStatus({ userId, isPrivateVault = false }) {
         const timer = setTimeout(() => controller.abort(), 3000);
         const res = await fetch(url, { headers, signal: controller.signal });
         clearTimeout(timer);
-        setConnected(res.ok);
+        const ok = res.ok;
+        setConnected(ok);
         setMinutesAgo(null);
+        if (onConnectionChange) onConnectionChange(ok);
       } else {
         // Cloud: API에서 heartbeat 조회
         const headers = {};
@@ -47,10 +49,14 @@ export default function AgentStatus({ userId, isPrivateVault = false }) {
           const data = await res.json();
           setConnected(data.connected);
           setMinutesAgo(data.minutesAgo);
+          if (onConnectionChange) onConnectionChange(data.connected);
         }
       }
     } catch {
-      if (isPrivateVault) setConnected(false);
+      if (isPrivateVault) {
+        setConnected(false);
+        if (onConnectionChange) onConnectionChange(false);
+      }
     }
   }, [userId, isPrivateVault]);
 

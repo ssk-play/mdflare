@@ -140,6 +140,7 @@ export default function Workspace({ user, isPrivateVault = false }) {
   const [dragSrc, setDragSrc] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [lightMode, setLightMode] = useState(() => localStorage.getItem('mdflare-theme') === 'light');
+  const [agentConnected, setAgentConnected] = useState(null); // null = loading
   const [recentFiles, setRecentFiles] = useState(() => {
     try { return JSON.parse(localStorage.getItem('mdflare-recent') || '[]'); } catch { return []; }
   });
@@ -664,7 +665,7 @@ export default function Workspace({ user, isPrivateVault = false }) {
           <h1 onClick={() => navigate(isPrivateVault ? '/private' : `/${userId}`)} style={{ cursor: 'pointer' }}>🔥 {getAppName()}</h1>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <AgentStatus userId={userId} isPrivateVault={isPrivateVault} />
+          <AgentStatus userId={userId} isPrivateVault={isPrivateVault} onConnectionChange={isPrivateVault ? setAgentConnected : undefined} />
           <span className="user-badge">{isPrivateVault ? '🔐 Private Vault' : `👤 ${user?.displayName || userId}`}</span>
           <button className="logout-btn" onClick={handleLogout}>{isPrivateVault ? '연결 해제' : '로그아웃'}</button>
         </div>
@@ -883,6 +884,18 @@ export default function Workspace({ user, isPrivateVault = false }) {
       )}
 
       <Toast toasts={toasts} onRemove={removeToast} />
+
+      {isPrivateVault && agentConnected === false && (
+        <div className="agent-disconnected-overlay">
+          <div className="agent-disconnected-modal">
+            <div className="agent-disconnected-icon">🔌</div>
+            <h3>에이전트 연결 끊김</h3>
+            <p>Private Vault 에이전트와 연결이 끊어졌습니다.<br/>에이전트가 다시 연결되면 자동으로 복구됩니다.</p>
+            <div className="agent-disconnected-spinner">⟳</div>
+            <p className="agent-disconnected-sub">재연결 대기 중...</p>
+          </div>
+        </div>
+      )}
     </>
   );
 }
