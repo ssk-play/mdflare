@@ -1,10 +1,11 @@
-import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useState, useEffect, useCallback } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { loginWithGoogle } from '../firebase';
 import { getAppName } from '../components/AppTitle';
 
 export default function Landing({ user, username }) {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [showPrivateVault, setShowPrivateVault] = useState(false);
   const [connectionToken, setConnectionToken] = useState('');
   const [connecting, setConnecting] = useState(false);
@@ -38,14 +39,14 @@ export default function Landing({ user, username }) {
     }
   };
 
-  const handlePrivateVaultConnect = async () => {
+  const connectPrivateVault = useCallback(async (inputToken) => {
     setError('');
     setConnecting(true);
-    
+
     try {
-      console.log('[PV] 연결 시작, 토큰:', connectionToken.trim().substring(0, 20) + '...');
-      
-      const { serverUrl, token } = parseConnectionToken(connectionToken.trim());
+      console.log('[PV] 연결 시작, 토큰:', inputToken.substring(0, 20) + '...');
+
+      const { serverUrl, token } = parseConnectionToken(inputToken);
       console.log('[PV] 파싱 결과:', { serverUrl, tokenLength: token?.length });
       
       // bore.pub 등 외부 터널은 프록시 통해 연결
@@ -87,19 +88,29 @@ export default function Landing({ user, username }) {
     } finally {
       setConnecting(false);
     }
-  };
+  }, [navigate]);
+
+  const handlePrivateVaultConnect = () => connectPrivateVault(connectionToken.trim());
 
   useEffect(() => {
     if (user && username) {
       navigate(`/${username}`);
+      return;
     }
-    
+
     // Private Vault 모드로 저장된 경우 자동 연결
     const savedMode = localStorage.getItem('mdflare_mode');
     if (savedMode === 'private_vault') {
       navigate('/private');
+      return;
     }
-  }, [user, username, navigate]);
+
+    // URL 파라미터로 토큰이 전달된 경우 자동 연결
+    const pvtoken = searchParams.get('pvtoken');
+    if (pvtoken) {
+      connectPrivateVault(pvtoken);
+    }
+  }, [user, username, navigate, searchParams, connectPrivateVault]);
 
   if (user && username) {
     return null;

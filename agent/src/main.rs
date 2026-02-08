@@ -1480,8 +1480,7 @@ fn run_cloud_tray_app(config: Config) {
 
 fn run_private_vault_tray_app(config: Config) {
     let event_loop = EventLoop::new();
-    let connection_token = generate_connection_token(config.server_port, &config.server_token);
-    
+
     let menu = Menu::new();
     append_about(&menu);
 
@@ -1490,7 +1489,6 @@ fn run_private_vault_tray_app(config: Config) {
     let path_item = MenuItem::new(format!("📁 {}", shorten_path(&config.local_path)), false, None);
     let folder_item = MenuItem::new("📂 폴더 열기", true, None);
     let web_item = MenuItem::new("🌐 웹페이지 열기", true, None);
-    let copy_token_item = MenuItem::new("📋 연결 토큰 복사", true, None);
     let disconnect_item = MenuItem::new("🔌 연결 해제", true, None);
     let quit_item = MenuItem::new("종료", true, None);
 
@@ -1500,35 +1498,32 @@ fn run_private_vault_tray_app(config: Config) {
     menu.append(&PredefinedMenuItem::separator()).ok();
     menu.append(&folder_item).ok();
     menu.append(&web_item).ok();
-    menu.append(&copy_token_item).ok();
     menu.append(&PredefinedMenuItem::separator()).ok();
     menu.append(&disconnect_item).ok();
     menu.append(&quit_item).ok();
 
     let folder_id = folder_item.id().clone();
     let web_id = web_item.id().clone();
-    let copy_token_id = copy_token_item.id().clone();
     let disconnect_id = disconnect_item.id().clone();
     let quit_id = quit_item.id().clone();
-    
+
     let _tray = TrayIconBuilder::new()
         .with_menu(Box::new(menu))
         .with_tooltip("MDFlare Agent (Private Vault)")
         .with_icon(load_icon_active())
         .build()
         .expect("Failed to create tray icon");
-    
+
     // HTTP 서버를 별도 스레드에서 실행
     let config_for_server = config.clone();
     thread::spawn(move || {
         let rt = tokio::runtime::Runtime::new().unwrap();
         rt.block_on(run_private_vault_server(config_for_server));
     });
-    
+
     let config_for_menu = config.clone();
-    let connection_token_for_menu = connection_token.clone();
     let menu_receiver = MenuEvent::receiver();
-    
+
     thread::spawn(move || {
         loop {
             if let Ok(event) = menu_receiver.recv() {
@@ -1538,32 +1533,9 @@ fn run_private_vault_tray_app(config: Config) {
                     open::that(&config_for_menu.local_path).ok();
                 } else if event.id == web_id {
                     let settings = ServerSettings::load();
-                    let url = format!("{}/private", settings.api_base);
+                    let conn_token = generate_connection_token(config_for_menu.server_port, &config_for_menu.server_token);
+                    let url = format!("{}/?pvtoken={}", settings.api_base, conn_token);
                     open::that(url).ok();
-                } else if event.id == copy_token_id {
-                    // 클립보드 복사는 플랫폼별로 다름
-                    #[cfg(target_os = "macos")]
-                    {
-                        std::process::Command::new("pbcopy")
-                            .stdin(std::process::Stdio::piped())
-                            .spawn()
-                            .and_then(|mut child| {
-                                use std::io::Write;
-                                if let Some(stdin) = child.stdin.as_mut() {
-                                    stdin.write_all(connection_token_for_menu.as_bytes()).ok();
-                                }
-                                child.wait()
-                            })
-                            .ok();
-                    }
-                    #[cfg(target_os = "windows")]
-                    {
-                        std::process::Command::new("cmd")
-                            .args(["/C", &format!("echo {}| clip", connection_token_for_menu)])
-                            .spawn()
-                            .ok();
-                    }
-                    println!("📋 연결 토큰이 클립보드에 복사되었습니다");
                 } else if event.id == disconnect_id {
                     let mut config = Config::load();
                     config.local_path.clear();
@@ -2010,7 +1982,7 @@ fn run_setup_tray_app() {
     let phase = Arc::new(Mutex::new(AppPhase::Setup));
     let cloud_state: Arc<Mutex<Option<(Config, Arc<Mutex<SyncEngine>>)>>> = Arc::new(Mutex::new(None));
     let cloud_menu_ids: Arc<Mutex<Option<(muda::MenuId, muda::MenuId, muda::MenuId, muda::MenuId, muda::MenuId)>>> = Arc::new(Mutex::new(None));
-    let vault_menu_ids: Arc<Mutex<Option<(muda::MenuId, muda::MenuId, muda::MenuId, muda::MenuId, muda::MenuId)>>> = Arc::new(Mutex::new(None));
+    let vault_menu_ids: Arc<Mutex<Option<(muda::MenuId, muda::MenuId, muda::MenuId, muda::MenuId)>>> = Arc::new(Mutex::new(None));
     let needs_show_mode_dialog: Arc<Mutex<bool>> = Arc::new(Mutex::new(false));
     let dialog_choice: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
     let needs_show_folder_dialog: Arc<Mutex<bool>> = Arc::new(Mutex::new(false));
@@ -2089,7 +2061,7 @@ fn run_setup_tray_app() {
                         }
                     }
                     AppPhase::Vault => {
-                        if let Some((folder_id, web_id, copy_token_id, disconnect_id, quit_id)) = vault_menu_ids_menu.lock().unwrap().as_ref() {
+                        if let Some((folder_id, web_id, disconnect_id, quit_id)) = vault_menu_ids_menu.lock().unwrap().as_ref() {
                             if &event.id == quit_id {
                                 std::process::exit(0);
                             } else if &event.id == folder_id {
@@ -2098,7 +2070,9 @@ fn run_setup_tray_app() {
                                 }
                             } else if &event.id == web_id {
                                 let settings = ServerSettings::load();
-                                let url = format!("{}/private", settings.api_base);
+                                let config = Config::load();
+                                let conn_token = generate_connection_token(config.server_port, &config.server_token);
+                                let url = format!("{}/?pvtoken={}", settings.api_base, conn_token);
                                 open::that(url).ok();
                             } else if &event.id == disconnect_id {
                                 let mut config = Config::load();
@@ -2109,24 +2083,6 @@ fn run_setup_tray_app() {
                                 let exe = std::env::current_exe().unwrap();
                                 std::process::Command::new(exe).spawn().ok();
                                 std::process::exit(0);
-                            } else if &event.id == copy_token_id {
-                                // 클립보드 복사
-                                let config = Config::load();
-                                let conn_token = generate_connection_token(config.server_port, &config.server_token);
-                                #[cfg(target_os = "macos")]
-                                {
-                                    std::process::Command::new("pbcopy")
-                                        .stdin(std::process::Stdio::piped())
-                                        .spawn()
-                                        .and_then(|mut child| {
-                                            use std::io::Write;
-                                            if let Some(stdin) = child.stdin.as_mut() {
-                                                stdin.write_all(conn_token.as_bytes()).ok();
-                                            }
-                                            child.wait()
-                                        })
-                                        .ok();
-                                }
                             }
                         }
                     }
@@ -2227,19 +2183,32 @@ fn run_setup_tray_app() {
                     log_to_file("setup: cloud selected → waiting for browser login");
                 }
                 "vault" => {
-                    let mut config = Config::load();
-                    config.storage_mode = StorageMode::PrivateVault;
-                    config.local_path = pick_folder("Private Vault 폴더 선택");
-                    fs::create_dir_all(&config.local_path).ok();
-                    config.save();
-                    *phase_loop.lock().unwrap() = AppPhase::Vault;
-                    log_to_file(&format!("setup: vault selected → {}", config.local_path));
+                    if let Some(folder) = pick_folder("Private Vault 폴더 선택") {
+                        let mut config = Config::load();
+                        config.storage_mode = StorageMode::PrivateVault;
+                        config.local_path = folder;
+                        fs::create_dir_all(&config.local_path).ok();
+                        config.save();
+                        *phase_loop.lock().unwrap() = AppPhase::Vault;
+                        log_to_file(&format!("setup: vault selected → {}", config.local_path));
 
-                    let config_for_server = config.clone();
-                    thread::spawn(move || {
-                        let rt = tokio::runtime::Runtime::new().unwrap();
-                        rt.block_on(run_private_vault_server(config_for_server));
-                    });
+                        let config_for_server = config.clone();
+                        thread::spawn(move || {
+                            let rt = tokio::runtime::Runtime::new().unwrap();
+                            rt.block_on(run_private_vault_server(config_for_server));
+                        });
+
+                        // 서버 준비 후 웹페이지 자동 열기 (토큰 포함)
+                        let settings = ServerSettings::load();
+                        let conn_token = generate_connection_token(config.server_port, &config.server_token);
+                        let web_url = format!("{}/?pvtoken={}", settings.api_base, conn_token);
+                        thread::spawn(move || {
+                            thread::sleep(Duration::from_millis(500));
+                            open::that(web_url).ok();
+                        });
+                    } else {
+                        log_to_file("setup: vault folder selection cancelled");
+                    }
                 }
                 _ => {} // cancel
             }
@@ -2290,11 +2259,12 @@ fn run_setup_tray_app() {
 
             match action {
                 "browse" => {
-                    let selected = pick_folder("동기화 폴더 선택");
-                    // 선택된 경로를 웹뷰에 전달
-                    if let Some(ref wv) = folder_dialog_webview {
-                        let js = format!("setPath('{}')", selected.replace('\\', "\\\\").replace('\'', "\\'"));
-                        wv.evaluate_script(&js).ok();
+                    if let Some(selected) = pick_folder("동기화 폴더 선택") {
+                        // 선택된 경로를 웹뷰에 전달
+                        if let Some(ref wv) = folder_dialog_webview {
+                            let js = format!("setPath('{}')", selected.replace('\\', "\\\\").replace('\'', "\\'"));
+                            wv.evaluate_script(&js).ok();
+                        }
                     }
                 }
                 "ok" => {
@@ -2406,13 +2376,11 @@ fn run_setup_tray_app() {
             let path_item = MenuItem::new(format!("📁 {}", shorten_path(&config.local_path)), false, None);
             let folder_item = MenuItem::new("📂 폴더 열기", true, None);
             let web_item = MenuItem::new("🌐 웹페이지 열기", true, None);
-            let copy_token_item = MenuItem::new("📋 연결 토큰 복사", true, None);
             let disconnect_item = MenuItem::new("🔌 연결 해제", true, None);
             let quit_item = MenuItem::new("종료", true, None);
 
             let folder_id = folder_item.id().clone();
             let web_id = web_item.id().clone();
-            let copy_token_id = copy_token_item.id().clone();
             let disconnect_id = disconnect_item.id().clone();
             let quit_id = quit_item.id().clone();
 
@@ -2422,7 +2390,6 @@ fn run_setup_tray_app() {
             vault_menu.append(&PredefinedMenuItem::separator()).ok();
             vault_menu.append(&folder_item).ok();
             vault_menu.append(&web_item).ok();
-            vault_menu.append(&copy_token_item).ok();
             vault_menu.append(&PredefinedMenuItem::separator()).ok();
             vault_menu.append(&disconnect_item).ok();
             vault_menu.append(&quit_item).ok();
@@ -2431,7 +2398,7 @@ fn run_setup_tray_app() {
             let _ = tray.borrow_mut().set_tooltip(Some("MDFlare Agent (🔐 Private Vault)"));
             tray.borrow_mut().set_icon(Some(load_icon_active())).ok();
 
-            *vault_menu_ids_loop.lock().unwrap() = Some((folder_id, web_id, copy_token_id, disconnect_id, quit_id));
+            *vault_menu_ids_loop.lock().unwrap() = Some((folder_id, web_id, disconnect_id, quit_id));
         }
 
         {
@@ -2518,7 +2485,7 @@ fn run_setup_tray_app() {
 // Main
 // ============================================================================
 
-fn pick_folder(title: &str) -> String {
+fn pick_folder(title: &str) -> Option<String> {
     let default_path = dirs::document_dir()
         .map(|d| d.join("MDFlare"))
         .unwrap_or_default();
@@ -2528,12 +2495,16 @@ fn pick_folder(title: &str) -> String {
         .set_directory(&default_path)
         .pick_folder()
         .map(|p| p.to_string_lossy().to_string())
-        .unwrap_or_else(|| default_path.to_string_lossy().to_string())
 }
 
 fn setup_private_vault(mut config: Config) {
     config.storage_mode = StorageMode::PrivateVault;
-    config.local_path = pick_folder("Private Vault 폴더 선택");
+    if let Some(folder) = pick_folder("Private Vault 폴더 선택") {
+        config.local_path = folder;
+    } else {
+        println!("폴더 선택이 취소되었습니다.");
+        return;
+    }
     fs::create_dir_all(&config.local_path).ok();
     config.save();
 
