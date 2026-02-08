@@ -1495,6 +1495,7 @@ fn run_private_vault_tray_app(config: Config) {
     let path_item = MenuItem::new(format!("📁 {}", shorten_path(&config.local_path)), false, None);
     let folder_item = MenuItem::new("📂 폴더 열기", true, None);
     let web_item = MenuItem::new("🌐 웹페이지 열기", true, None);
+    let copy_token_item = MenuItem::new("📋 연결 토큰 복사", true, None);
     let disconnect_item = MenuItem::new("🔌 연결 해제", true, None);
     let quit_item = MenuItem::new("종료", true, None);
 
@@ -1504,12 +1505,14 @@ fn run_private_vault_tray_app(config: Config) {
     menu.append(&PredefinedMenuItem::separator()).ok();
     menu.append(&folder_item).ok();
     menu.append(&web_item).ok();
+    menu.append(&copy_token_item).ok();
     menu.append(&PredefinedMenuItem::separator()).ok();
     menu.append(&disconnect_item).ok();
     menu.append(&quit_item).ok();
 
     let folder_id = folder_item.id().clone();
     let web_id = web_item.id().clone();
+    let copy_token_id = copy_token_item.id().clone();
     let disconnect_id = disconnect_item.id().clone();
     let quit_id = quit_item.id().clone();
 
@@ -1542,6 +1545,22 @@ fn run_private_vault_tray_app(config: Config) {
                     let conn_token = generate_connection_token(config_for_menu.server_port, &config_for_menu.server_token);
                     let url = format!("{}/?pvtoken={}", settings.api_base, urlencoding::encode(&conn_token));
                     open::that(url).ok();
+                } else if event.id == copy_token_id {
+                    let conn_token = generate_connection_token(config_for_menu.server_port, &config_for_menu.server_token);
+                    #[cfg(target_os = "macos")]
+                    {
+                        std::process::Command::new("pbcopy")
+                            .stdin(std::process::Stdio::piped())
+                            .spawn()
+                            .and_then(|mut child| {
+                                use std::io::Write;
+                                if let Some(stdin) = child.stdin.as_mut() {
+                                    stdin.write_all(conn_token.as_bytes()).ok();
+                                }
+                                child.wait()
+                            })
+                            .ok();
+                    }
                 } else if event.id == disconnect_id {
                     let mut config = Config::load();
                     config.local_path.clear();
@@ -1988,7 +2007,7 @@ fn run_setup_tray_app() {
     let phase = Arc::new(Mutex::new(AppPhase::Setup));
     let cloud_state: Arc<Mutex<Option<(Config, Arc<Mutex<SyncEngine>>)>>> = Arc::new(Mutex::new(None));
     let cloud_menu_ids: Arc<Mutex<Option<(muda::MenuId, muda::MenuId, muda::MenuId, muda::MenuId, muda::MenuId)>>> = Arc::new(Mutex::new(None));
-    let vault_menu_ids: Arc<Mutex<Option<(muda::MenuId, muda::MenuId, muda::MenuId, muda::MenuId)>>> = Arc::new(Mutex::new(None));
+    let vault_menu_ids: Arc<Mutex<Option<(muda::MenuId, muda::MenuId, muda::MenuId, muda::MenuId, muda::MenuId)>>> = Arc::new(Mutex::new(None));
     let needs_show_mode_dialog: Arc<Mutex<bool>> = Arc::new(Mutex::new(false));
     let dialog_choice: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
     let needs_show_folder_dialog: Arc<Mutex<bool>> = Arc::new(Mutex::new(false));
@@ -2067,7 +2086,7 @@ fn run_setup_tray_app() {
                         }
                     }
                     AppPhase::Vault => {
-                        if let Some((folder_id, web_id, disconnect_id, quit_id)) = vault_menu_ids_menu.lock().unwrap().as_ref() {
+                        if let Some((folder_id, web_id, copy_token_id, disconnect_id, quit_id)) = vault_menu_ids_menu.lock().unwrap().as_ref() {
                             if &event.id == quit_id {
                                 std::process::exit(0);
                             } else if &event.id == folder_id {
@@ -2080,6 +2099,23 @@ fn run_setup_tray_app() {
                                 let conn_token = generate_connection_token(config.server_port, &config.server_token);
                                 let url = format!("{}/?pvtoken={}", settings.api_base, urlencoding::encode(&conn_token));
                                 open::that(url).ok();
+                            } else if &event.id == copy_token_id {
+                                let config = Config::load();
+                                let conn_token = generate_connection_token(config.server_port, &config.server_token);
+                                #[cfg(target_os = "macos")]
+                                {
+                                    std::process::Command::new("pbcopy")
+                                        .stdin(std::process::Stdio::piped())
+                                        .spawn()
+                                        .and_then(|mut child| {
+                                            use std::io::Write;
+                                            if let Some(stdin) = child.stdin.as_mut() {
+                                                stdin.write_all(conn_token.as_bytes()).ok();
+                                            }
+                                            child.wait()
+                                        })
+                                        .ok();
+                                }
                             } else if &event.id == disconnect_id {
                                 let mut config = Config::load();
                                 config.local_path.clear();
@@ -2382,11 +2418,13 @@ fn run_setup_tray_app() {
             let path_item = MenuItem::new(format!("📁 {}", shorten_path(&config.local_path)), false, None);
             let folder_item = MenuItem::new("📂 폴더 열기", true, None);
             let web_item = MenuItem::new("🌐 웹페이지 열기", true, None);
+            let copy_token_item = MenuItem::new("📋 연결 토큰 복사", true, None);
             let disconnect_item = MenuItem::new("🔌 연결 해제", true, None);
             let quit_item = MenuItem::new("종료", true, None);
 
             let folder_id = folder_item.id().clone();
             let web_id = web_item.id().clone();
+            let copy_token_id = copy_token_item.id().clone();
             let disconnect_id = disconnect_item.id().clone();
             let quit_id = quit_item.id().clone();
 
@@ -2396,6 +2434,7 @@ fn run_setup_tray_app() {
             vault_menu.append(&PredefinedMenuItem::separator()).ok();
             vault_menu.append(&folder_item).ok();
             vault_menu.append(&web_item).ok();
+            vault_menu.append(&copy_token_item).ok();
             vault_menu.append(&PredefinedMenuItem::separator()).ok();
             vault_menu.append(&disconnect_item).ok();
             vault_menu.append(&quit_item).ok();
@@ -2404,7 +2443,7 @@ fn run_setup_tray_app() {
             let _ = tray.borrow_mut().set_tooltip(Some("MDFlare Agent (🔐 Private Vault)"));
             tray.borrow_mut().set_icon(Some(load_icon_active())).ok();
 
-            *vault_menu_ids_loop.lock().unwrap() = Some((folder_id, web_id, disconnect_id, quit_id));
+            *vault_menu_ids_loop.lock().unwrap() = Some((folder_id, web_id, copy_token_id, disconnect_id, quit_id));
         }
 
         {
