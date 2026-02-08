@@ -26,13 +26,14 @@ ZIP="/tmp/MDFlare-Agent-${VERSION}-mac.zip"
 # 2. .app 번들 생성
 echo "📁 .app 번들 생성 중..."
 rm -rf "$APP_DIR"
-mkdir -p "$APP_DIR/Contents/MacOS"
+mkdir -p "$APP_DIR/Contents/MacOS" "$APP_DIR/Contents/Resources"
 
 # Info.plist 복사 + 버전 업데이트
 sed -e "s/<string>1\.0\.5</<string>$VERSION</" \
   "$ROOT_DIR/agent/macos/Info.plist" > "$APP_DIR/Contents/Info.plist"
 
 cp "$BINARY" "$APP_DIR/Contents/MacOS/mdflare-agent"
+cp "$ROOT_DIR/agent/macos/AppIcon.icns" "$APP_DIR/Contents/Resources/AppIcon.icns"
 
 # 3. install.sh 복사 + zip 패키징
 cp "$ROOT_DIR/agent/install.sh" /tmp/install.sh

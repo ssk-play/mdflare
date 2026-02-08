@@ -8,6 +8,8 @@
 	<string>MDFlare Agent</string>
 	<key>CFBundleDisplayName</key>
 	<string>MDFlare Agent</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
 	<key>CFBundleExecutable</key>
 	<string>mdflare-agent</string>
 	<key>CFBundlePackageType</key>

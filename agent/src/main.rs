@@ -1186,9 +1186,47 @@ fn register_url_scheme() {}
 // ============================================================================
 
 fn load_icon_active() -> Icon {
-    // 밝은 주황색 - 동기화 연결됨
-    let rgba: Vec<u8> = (0..16*16).flat_map(|_| vec![255u8, 100, 50, 255]).collect();
-    Icon::from_rgba(rgba, 16, 16).expect("Failed to create icon")
+    // 🔥 불꽃 아이콘 (22x22) - MDFlare 트레이드마크
+    let size = 22u32;
+    let mut rgba = vec![0u8; (size * size * 4) as usize];
+
+    for y in 0..size {
+        for x in 0..size {
+            let idx = ((y * size + x) * 4) as usize;
+            let fx = x as f32;
+            let fy = y as f32;
+
+            // 불꽃 외곽 (주황-빨강)
+            let outer = {
+                let main = (fx - 11.0).powi(2) / 30.0 + (fy - 12.0).powi(2) / 55.0 < 1.0;
+                let top = (fx - 11.0).powi(2) / 12.0 + (fy - 4.0).powi(2) / 18.0 < 1.0;
+                let left_flick = (fx - 7.0).powi(2) / 8.0 + (fy - 6.0).powi(2) / 12.0 < 1.0;
+                let right_flick = (fx - 15.0).powi(2) / 6.0 + (fy - 7.0).powi(2) / 10.0 < 1.0;
+                (main || top || left_flick || right_flick) && fy > 2.0
+            };
+
+            // 불꽃 내부 (노랑)
+            let inner = {
+                let core = (fx - 11.0).powi(2) / 12.0 + (fy - 13.0).powi(2) / 20.0 < 1.0;
+                let tip = (fx - 11.0).powi(2) / 5.0 + (fy - 8.0).powi(2) / 10.0 < 1.0;
+                (core || tip) && fy > 6.0
+            };
+
+            if inner {
+                rgba[idx] = 255;
+                rgba[idx + 1] = 220;
+                rgba[idx + 2] = 50;
+                rgba[idx + 3] = 255;
+            } else if outer {
+                rgba[idx] = 255;
+                rgba[idx + 1] = 90;
+                rgba[idx + 2] = 20;
+                rgba[idx + 3] = 255;
+            }
+        }
+    }
+
+    Icon::from_rgba(rgba, size, size).expect("Failed to create icon")
 }
 
 fn load_icon_setup() -> Icon {
