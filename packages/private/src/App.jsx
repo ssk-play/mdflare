@@ -47,7 +47,7 @@ function PrivateLanding() {
       localStorage.setItem('mdflare_token', token);
       localStorage.setItem('mdflare_use_proxy', isExternal ? 'true' : 'false');
       
-      navigate('/workspace');
+      navigate('/private');
     } catch (err) {
       setError(`연결 실패: ${err.message}`);
     } finally {
@@ -58,7 +58,7 @@ function PrivateLanding() {
   useEffect(() => {
     const savedMode = localStorage.getItem('mdflare_mode');
     if (savedMode === 'private_vault') {
-      navigate('/workspace');
+      navigate('/private');
       return;
     }
 
@@ -124,7 +124,7 @@ export default function App() {
   return (
     <Routes>
       <Route path="/" element={<PrivateLanding />} />
-      <Route path="/workspace/*" element={<Workspace user={null} isPrivateVault={true} />} />
+      <Route path="/private/*" element={<Workspace user={null} isPrivateVault={true} />} />
     </Routes>
   );
 }
