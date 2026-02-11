@@ -73,7 +73,7 @@ function PrivateLanding() {
       <nav className="landing-nav">
         <h1>🔐 {getAppName()} Private</h1>
         <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-          <a href="https://mdflare.com" className="nav-link">홈</a>
+          <a href="https://home.mdflare.com" className="nav-link">홈</a>
         </div>
       </nav>
 

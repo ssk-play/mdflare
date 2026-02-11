@@ -35,7 +35,7 @@ export default function Landing({ user, username }) {
       <nav className="landing-nav">
         <h1>☁️ {getAppName()} Cloud</h1>
         <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-          <a href="https://mdflare.com" className="nav-link">홈</a>
+          <a href="https://home.mdflare.com" className="nav-link">홈</a>
           <button className="nav-link" onClick={() => navigate('/download')}>다운로드</button>
           <button className="login-btn" onClick={handleLogin}>로그인</button>
         </div>
