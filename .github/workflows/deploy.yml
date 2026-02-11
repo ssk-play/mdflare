@@ -4,13 +4,6 @@ on:
   push:
     branches:
       - main
-      - dev
-    paths:
-      - 'packages/**'
-      - '.github/workflows/**'
-  pull_request:
-    branches:
-      - main
     paths:
       - 'packages/**'
       - '.github/workflows/**'
@@ -68,7 +61,7 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           workingDirectory: packages/landing
-          command: pages deploy dist --project-name=mdflare-landing --branch=${{ github.ref_name }}
+          command: pages deploy dist --project-name=mdflare-landing --branch=main
 
   # Cloud 배포
   deploy-cloud:
@@ -99,7 +92,7 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           workingDirectory: packages/cloud
-          command: pages deploy dist --project-name=mdflare-cloud --branch=${{ github.ref_name }}
+          command: pages deploy dist --project-name=mdflare-cloud --branch=main
 
   # Private 배포
   deploy-private:
@@ -130,4 +123,4 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           workingDirectory: packages/private
-          command: pages deploy dist --project-name=mdflare-private --branch=${{ github.ref_name }}
+          command: pages deploy dist --project-name=mdflare-private --branch=main
