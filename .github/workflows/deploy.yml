@@ -6,45 +6,128 @@ on:
       - main
       - dev
     paths:
-      - 'web/**'
+      - 'packages/**'
       - '.github/workflows/**'
   pull_request:
     branches:
       - main
     paths:
-      - 'web/**'
+      - 'packages/**'
       - '.github/workflows/**'
 
 jobs:
-  deploy:
+  # 변경된 패키지 감지
+  detect-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      landing: ${{ steps.filter.outputs.landing }}
+      cloud: ${{ steps.filter.outputs.cloud }}
+      private: ${{ steps.filter.outputs.private }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            landing:
+              - 'packages/landing/**'
+              - 'packages/common/**'
+            cloud:
+              - 'packages/cloud/**'
+              - 'packages/common/**'
+            private:
+              - 'packages/private/**'
+              - 'packages/common/**'
+
+  # Landing 배포
+  deploy-landing:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.landing == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
       deployments: write
-    
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
+      - uses: actions/checkout@v4
+      
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: 'npm'
-          cache-dependency-path: web/package-lock.json
-
+      
       - name: Install dependencies
-        working-directory: web
         run: npm ci
-
-      - name: Build
-        working-directory: web
-        run: npm run build
-
-      - name: Deploy to Cloudflare Pages
+      
+      - name: Build Landing
+        run: npm run build:landing
+      
+      - name: Deploy Landing
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          workingDirectory: web
-          command: pages deploy dist --project-name=mdflare --branch=${{ github.ref_name }}
+          workingDirectory: packages/landing
+          command: pages deploy dist --project-name=mdflare-landing --branch=${{ github.ref_name }}
+
+  # Cloud 배포
+  deploy-cloud:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.cloud == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      deployments: write
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      
+      - name: Install dependencies
+        run: npm ci
+      
+      - name: Build Cloud
+        run: npm run build:cloud
+      
+      - name: Deploy Cloud
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: packages/cloud
+          command: pages deploy dist --project-name=mdflare-cloud --branch=${{ github.ref_name }}
+
+  # Private 배포
+  deploy-private:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.private == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      deployments: write
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      
+      - name: Install dependencies
+        run: npm ci
+      
+      - name: Build Private
+        run: npm run build:private
+      
+      - name: Deploy Private
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: packages/private
+          command: pages deploy dist --project-name=mdflare-private --branch=${{ github.ref_name }}
