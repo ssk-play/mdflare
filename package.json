@@ -3,10 +3,18 @@
   "version": "1.0.15",
   "private": true,
   "description": "🔥 MDFlare — Local markdown folder sync to web",
+  "workspaces": [
+    "packages/*"
+  ],
   "scripts": {
-    "dev": "concurrently \"npm run dev:server\" \"npm run dev:web\"",
+    "dev:landing": "npm -w @mdflare/landing run dev",
+    "dev:cloud": "npm -w @mdflare/cloud run dev",
+    "dev:private": "npm -w @mdflare/private run dev",
     "dev:server": "node server/index.js",
-    "dev:web": "cd web && npx vite",
+    "build:all": "npm -w @mdflare/landing run build && npm -w @mdflare/cloud run build && npm -w @mdflare/private run build",
+    "build:landing": "npm -w @mdflare/landing run build",
+    "build:cloud": "npm -w @mdflare/cloud run build",
+    "build:private": "npm -w @mdflare/private run build",
     "test:api": "./scripts/check-api-parity.sh"
   },
   "dependencies": {
