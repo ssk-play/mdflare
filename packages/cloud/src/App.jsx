@@ -56,7 +56,6 @@ export default function App() {
       <Route path="/setup" element={
         user && !username ? <SetUsername user={user} /> : <Landing user={user} username={username} />
       } />
-      <Route path="/private/*" element={<Workspace user={user} isPrivateVault={true} />} />
       <Route path="/:userId/*" element={<Workspace user={user} />} />
     </Routes>
   );
