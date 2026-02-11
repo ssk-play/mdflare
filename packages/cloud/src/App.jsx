@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Routes, Route } from 'react-router-dom';
-import { onAuthChange } from './firebase';
-import { useAppTitle, getAppName } from './components/AppTitle';
+import { onAuthChange, useAppTitle, getAppName } from '@mdflare/common';
 import Landing from './pages/Landing';
 import Workspace from './pages/Workspace';
 import SetUsername from './pages/SetUsername';
@@ -57,7 +56,6 @@ export default function App() {
       <Route path="/setup" element={
         user && !username ? <SetUsername user={user} /> : <Landing user={user} username={username} />
       } />
-      <Route path="/private/*" element={<Workspace user={user} isPrivateVault={true} />} />
       <Route path="/:userId/*" element={<Workspace user={user} />} />
     </Routes>
   );

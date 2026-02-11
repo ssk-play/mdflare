@@ -1,5 +1,5 @@
 {
-  "name": "mdflare-web",
+  "name": "@mdflare/private",
   "private": true,
   "version": "1.0.15",
   "type": "module",
@@ -8,6 +8,7 @@
     "build": "vite build"
   },
   "dependencies": {
+    "@mdflare/common": "*",
     "@codemirror/lang-markdown": "^6.3.1",
     "@codemirror/language-data": "^6.5.1",
     "@codemirror/state": "^6.5.0",

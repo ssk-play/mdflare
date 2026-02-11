@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { auth, googleProvider } from '../firebase';
+import { auth, googleProvider } from '@mdflare/common';
 import { signInWithPopup, onAuthStateChanged } from 'firebase/auth';
 
 export default function AgentAuth() {

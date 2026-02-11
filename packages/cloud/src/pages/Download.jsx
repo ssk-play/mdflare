@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { getAppName } from '../components/AppTitle';
+import { getAppName } from '@mdflare/common';
 
 const STORAGE_BASE = 'https://firebasestorage.googleapis.com/v0/b/markdownflare.firebasestorage.app/o';
 const META_URL = `${STORAGE_BASE}/downloads%2Fmac%2Fmeta.json?alt=media`;

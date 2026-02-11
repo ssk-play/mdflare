@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { auth } from '../firebase';
+import { auth } from '@mdflare/common';
 
 function getPrivateVaultConfig() {
   return {

@@ -5,8 +5,8 @@ import { markdown } from '@codemirror/lang-markdown';
 import { EditorView } from '@codemirror/view';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { updateFileMeta, deleteFileMeta, onFilesChanged, simpleHash, computeLineDiff, logout, auth } from '../firebase';
-import { getAppName } from '../components/AppTitle';
+import { updateFileMeta, deleteFileMeta, onFilesChanged, simpleHash, computeLineDiff, logout, auth } from '@mdflare/common';
+import { getAppName } from '@mdflare/common';
 import AgentStatus from '../components/AgentStatus';
 
 const API = '/api';

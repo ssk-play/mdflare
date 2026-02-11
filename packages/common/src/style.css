@@ -892,6 +892,42 @@ body.light-mode .recent-item:hover { background: #eaeef2; color: #0969da; }
   line-height: 1.5;
 }
 
+.why-section {
+  max-width: 800px;
+  margin: 0 auto;
+  padding: 48px 24px;
+}
+
+.why-section h2 {
+  font-size: 28px;
+  margin-bottom: 24px;
+  color: #e6edf3;
+}
+
+.why-content h3 {
+  font-size: 20px;
+  margin: 24px 0 12px;
+  color: #58a6ff;
+}
+
+.why-content p {
+  font-size: 16px;
+  line-height: 1.7;
+  color: #8b949e;
+  margin-bottom: 16px;
+}
+
+.why-content ul {
+  list-style: disc;
+  padding-left: 24px;
+  color: #8b949e;
+}
+
+.why-content li {
+  margin-bottom: 8px;
+  line-height: 1.6;
+}
+
 .landing-footer {
   text-align: center;
   padding: 24px;
