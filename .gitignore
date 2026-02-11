@@ -6,4 +6,5 @@ test-vault
 .DS_Store
 agent/target/
 web/dist/
+packages/*/dist/
 local-data/
