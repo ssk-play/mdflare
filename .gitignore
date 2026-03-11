@@ -8,3 +8,4 @@ agent/target/
 web/dist/
 packages/*/dist/
 local-data/
+.serena
